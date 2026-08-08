@@ -65,12 +65,21 @@
       unitList.innerHTML = units
         .map(
           (u) => `
-        <div class="card unit-card" data-id="${u.id}" style="margin-bottom:8px;">
-          <div>
-            <div class="name">${u.name}</div>
-            <div class="meta">${typeLabel(u.unit_type)} · เข้าพักได้ ${u.capacity} คน</div>
+        <div class="card unit-card" data-id="${u.id}" style="margin-bottom:8px; flex-direction:column; align-items:stretch;">
+          ${
+            u.photo_urls && u.photo_urls.length
+              ? `<div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:10px;">
+                  ${u.photo_urls.map((url) => `<img src="${url}" style="width:96px; height:72px; object-fit:cover; border-radius:8px; flex-shrink:0;" />`).join("")}
+                </div>`
+              : ""
+          }
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div class="name">${u.name}</div>
+              <div class="meta">${typeLabel(u.unit_type)} · เข้าพักได้ ${u.capacity} คน</div>
+            </div>
+            <div class="price">${fmtBaht(u.base_price)}<div class="meta">/คืน</div></div>
           </div>
-          <div class="price">${fmtBaht(u.base_price)}<div class="meta">/คืน</div></div>
         </div>`,
         )
         .join("");
@@ -134,7 +143,7 @@
       await ensureLiff();
       const { data, error } = await supabase
         .from("units")
-        .select("id, code, name, unit_type, base_price, capacity")
+        .select("id, code, name, unit_type, base_price, capacity, photo_urls")
         .eq("is_active", true)
         .order("unit_type");
       if (error) throw error;

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ชำระเงิน — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
+    <a href="./bookings.html">การจอง</a>
+    <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
+    <a href="./payments.html" class="active">ชำระเงิน</a>
+    <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
+    <button class="logout" id="logoutBtn">ออกจากระบบ</button>
+  </nav>
+  <div class="content">
+    <header>
+      <h1>ชำระเงิน</h1>
+      <p>ตรวจสอบสลิปที่ลูกค้าอัปโหลด แล้วกดยืนยันเพื่อเปลี่ยนสถานะการจองเป็น "ยืนยันแล้ว"</p>
+    </header>
+    <div id="msgBox"></div>
+    <div id="paymentsWrap"><div class="empty">กำลังโหลด...</div></div>
+  </div>
+</div>
+<script type="module">
+  import { supabase, requireSession, logout, gateOwnerOnlyNav, fmtDate, fmtBaht } from "./assets/app.js";
+
+  const paymentsWrap = document.getElementById("paymentsWrap");
+
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
+    setTimeout(() => (document.getElementById("msgBox").innerHTML = ""), 3000);
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  async function loadPending() {
+    paymentsWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
+    const { data, error } = await supabase
+      .from("payments")
+      .select("id, amount, slip_url, paid_at, booking_id, bookings(booking_ref, check_in, check_out, status, guests(display_name, phone), units(name))")
+      .eq("verified", false)
+      .order("paid_at", { ascending: true });
+
+    if (error) {
+      paymentsWrap.innerHTML = `<div class="msg error">โหลดข้อมูลไม่สำเร็จ: ${error.message}</div>`;
+      return;
+    }
+    render(data || []);
+  }
+
+  async function render(rows) {
+    if (!rows.length) {
+      paymentsWrap.innerHTML = `<div class="empty">ไม่มีสลิปที่รอตรวจสอบ</div>`;
+      return;
+    }
+
+    const cards = await Promise.all(
+      rows.map(async (p) => {
+        let slipSrc = "";
+        if (p.slip_url) {
+          const { data: signed } = await supabase.storage
+            .from("payment-slips")
+            .createSignedUrl(p.slip_url, 300);
+          slipSrc = signed?.signedUrl || "";
+        }
+        const b = p.bookings;
+        return `
+          <div class="card" style="margin-bottom:14px; display:flex; gap:16px; align-items:flex-start;">
+            ${slipSrc ? `<img src="${slipSrc}" alt="สลิป" style="width:140px; border-radius:8px; cursor:pointer;" data-zoom="${slipSrc}" />` : ""}
+            <div style="flex:1;">
+              <div style="font-weight:600;">${escapeHtml(b?.booking_ref ?? "-")}</div>
+              <div style="color:var(--ink-soft); font-size:0.85rem;">
+                ${escapeHtml(b?.units?.name ?? "-")} · ${escapeHtml(b?.guests?.display_name ?? "-")}${b?.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}
+              </div>
+              <div style="color:var(--ink-soft); font-size:0.85rem;">${b ? fmtDate(b.check_in) + " — " + fmtDate(b.check_out) : ""}</div>
+              <div style="font-weight:600; color:var(--clay-dark); margin-top:4px;">${fmtBaht(p.amount)}</div>
+              <div style="margin-top:10px; display:flex; gap:8px;">
+                <button class="primary" data-confirm="${p.id}" data-booking="${p.booking_id}" style="width:auto; padding:8px 16px;">ยืนยันการชำระเงิน</button>
+                <button class="ghost" data-reject="${p.id}" style="width:auto; padding:8px 16px;">ปฏิเสธสลิป</button>
+              </div>
+            </div>
+          </div>`;
+      }),
+    );
+
+    paymentsWrap.innerHTML = cards.join("");
+
+    paymentsWrap.querySelectorAll("img[data-zoom]").forEach((img) => {
+      img.addEventListener("click", () => window.open(img.dataset.zoom, "_blank"));
+    });
+    paymentsWrap.querySelectorAll("button[data-confirm]").forEach((btn) => {
+      btn.addEventListener("click", () => confirmPayment(btn.dataset.confirm, btn.dataset.booking, btn));
+    });
+    paymentsWrap.querySelectorAll("button[data-reject]").forEach((btn) => {
+      btn.addEventListener("click", () => rejectSlip(btn.dataset.reject, btn));
+    });
+  }
+
+  async function confirmPayment(paymentId, bookingId, btn) {
+    btn.disabled = true;
+    const session = await requireSession();
+    const { error: payErr } = await supabase
+      .from("payments")
+      .update({ verified: true, verified_by: session.user.id, verified_at: new Date().toISOString() })
+      .eq("id", paymentId);
+    if (payErr) {
+      showMsg("ยืนยันไม่สำเร็จ: " + payErr.message);
+      btn.disabled = false;
+      return;
+    }
+    const { error: bookErr } = await supabase.from("bookings").update({ status: "confirmed" }).eq("id", bookingId);
+    if (bookErr) {
+      showMsg("อัปเดตสถานะการจองไม่สำเร็จ: " + bookErr.message);
+    } else {
+      showMsg("ยืนยันการชำระเงินสำเร็จ — แจ้งเตือนลูกค้าผ่าน LINE แล้ว", "success");
+    }
+    await loadPending();
+  }
+
+  async function rejectSlip(paymentId, btn) {
+    if (!confirm("ปฏิเสธสลิปนี้? ลูกค้าจะต้องอัปโหลดสลิปใหม่")) return;
+    btn.disabled = true;
+    const { error } = await supabase.from("payments").delete().eq("id", paymentId);
+    if (error) {
+      showMsg("ปฏิเสธไม่สำเร็จ: " + error.message);
+      btn.disabled = false;
+      return;
+    }
+    showMsg("ปฏิเสธสลิปแล้ว", "success");
+    await loadPending();
+  }
+
+  async function init() {
+    const session = await requireSession();
+    if (!session) return;
+    await gateOwnerOnlyNav(session);
+    await loadPending();
+  }
+
+  init();
+</script>
+</body>
+</html>

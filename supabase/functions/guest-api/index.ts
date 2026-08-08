@@ -137,6 +137,67 @@ async function handleBook(req: Request) {
   return json({ booking });
 }
 
+async function handleUploadSlip(req: Request) {
+  const body = await req.json().catch(() => null);
+  if (!body?.idToken || !body?.bookingId || !body?.slipBase64) {
+    return json({ error: "idToken, bookingId, slipBase64 required" }, 400);
+  }
+
+  let line;
+  try {
+    line = await verifyIdToken(body.idToken);
+  } catch {
+    return json({ error: "invalid LIFF token" }, 401);
+  }
+
+  const { data: guest } = await supabase
+    .from("guests")
+    .select("id")
+    .eq("line_user_id", line.sub)
+    .maybeSingle();
+  if (!guest) return json({ error: "guest not found" }, 404);
+
+  const { data: booking } = await supabase
+    .from("bookings")
+    .select("id, guest_id, status, total_amount")
+    .eq("id", body.bookingId)
+    .maybeSingle();
+  if (!booking || booking.guest_id !== guest.id) {
+    return json({ error: "booking not found" }, 404);
+  }
+  if (booking.status !== "pending") {
+    return json({ error: "การจองนี้ไม่ได้อยู่ในสถานะรอชำระเงิน" }, 409);
+  }
+
+  const mimeType: string = body.mimeType || "image/jpeg";
+  const ext = mimeType.includes("png") ? "png" : "jpg";
+  let bytes: Uint8Array;
+  try {
+    const binary = atob(body.slipBase64);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch {
+    return json({ error: "invalid image data" }, 400);
+  }
+  if (bytes.length > 5 * 1024 * 1024) return json({ error: "ไฟล์ใหญ่เกินไป (สูงสุด 5MB)" }, 400);
+
+  const path = `${booking.id}/${Date.now()}.${ext}`;
+  const { error: uploadErr } = await supabase.storage
+    .from("payment-slips")
+    .upload(path, bytes, { contentType: mimeType, upsert: false });
+  if (uploadErr) return json({ error: "อัปโหลดสลิปไม่สำเร็จ" }, 500);
+
+  const { error: payErr } = await supabase.from("payments").insert({
+    booking_id: booking.id,
+    amount: booking.total_amount,
+    method: "promptpay",
+    slip_url: path,
+  });
+  if (payErr) return json({ error: "บันทึกข้อมูลการชำระเงินไม่สำเร็จ" }, 500);
+
+  return json({ ok: true });
+}
+
 async function handleMyBookings(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body?.idToken) return json({ error: "idToken required" }, 400);
@@ -157,12 +218,24 @@ async function handleMyBookings(req: Request) {
 
   const { data: bookings, error } = await supabase
     .from("bookings")
-    .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, units(name)")
+    .select(
+      "id, booking_ref, check_in, check_out, num_guests, status, total_amount, created_at, units(name), payments(verified, created_at:paid_at)",
+    )
     .eq("guest_id", guest.id)
     .order("check_in", { ascending: false });
 
   if (error) return json({ error: "failed to load bookings" }, 500);
-  return json({ bookings });
+
+  // Fold payments[] into a simple "has an unverified slip already uploaded?"
+  // flag the UI needs to decide whether to show the upload form or a
+  // "waiting for staff to confirm" message.
+  const withPaymentState = (bookings || []).map((b: any) => ({
+    ...b,
+    hasPendingSlip: (b.payments || []).some((p: any) => !p.verified),
+    payments: undefined,
+  }));
+
+  return json({ bookings: withPaymentState });
 }
 
 async function handleCancel(req: Request) {
@@ -219,6 +292,7 @@ Deno.serve(async (req: Request) => {
     if (path === "/book") return await handleBook(req);
     if (path === "/my-bookings") return await handleMyBookings(req);
     if (path === "/cancel") return await handleCancel(req);
+    if (path === "/upload-slip") return await handleUploadSlip(req);
     return json({ error: "not found" }, 404);
   } catch (e) {
     console.error(e);

@@ -12,6 +12,7 @@
     <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
     <a href="./bookings.html">การจอง</a>
     <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
+    <a href="./payments.html">ชำระเงิน</a>
     <a href="./units.html" class="active">ยูนิต &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
   </nav>
@@ -22,6 +23,9 @@
     </header>
     <div id="msgBox"></div>
 
+    <h3 class="section-heading" style="margin-top:0; padding-top:0; border-top:none;">ตั้งค่าการชำระเงิน (PromptPay)</h3>
+    <div id="paymentSettingsWrap"><div class="empty">กำลังโหลด...</div></div>
+
     <div class="kpi-row" id="kpiRow"></div>
 
     <h3 class="section-heading">สรุปตามพนักงาน (สำหรับคิดคอมมิชชั่น) — เดือนนี้</h3>
@@ -31,6 +35,12 @@
     <div id="unitsTableWrap"><div class="empty">กำลังโหลด...</div></div>
 
     <div id="addUnitWrap" style="margin-top:20px;"></div>
+
+    <h3 class="section-heading">รูปภาพยูนิต</h3>
+    <p style="color:var(--ink-soft); font-size:0.85rem; margin:-6px 0 12px;">
+      รูปที่อัปโหลดจะโชว์ให้ลูกค้าดูตอนเลือกยูนิตในหน้าจอง
+    </p>
+    <div id="unitPhotosWrap"><div class="empty">กำลังโหลด...</div></div>
 
     <h3 class="section-heading">พนักงาน (ผูกบัญชี LINE สำหรับคีย์จองผ่าน LIFF)</h3>
     <p style="color:var(--ink-soft); font-size:0.85rem; margin:-6px 0 12px;">
@@ -47,7 +57,10 @@
   const unitsTableWrap = document.getElementById("unitsTableWrap");
   const addUnitWrap = document.getElementById("addUnitWrap");
   const staffWrap = document.getElementById("staffWrap");
+  const paymentSettingsWrap = document.getElementById("paymentSettingsWrap");
+  const unitPhotosWrap = document.getElementById("unitPhotosWrap");
   let isOwner = false;
+  let currentUnits = [];
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
 
@@ -190,6 +203,63 @@
     else showMsg("ผูกบัญชี LINE สำเร็จ", "success");
   }
 
+  async function loadPaymentSettings() {
+    const { data, error } = await supabase.from("resort_settings").select("key, value");
+    if (error) {
+      paymentSettingsWrap.innerHTML = `<div class="msg error">โหลดตั้งค่าไม่สำเร็จ: ${error.message}</div>`;
+      return;
+    }
+    const map = {};
+    for (const row of data || []) map[row.key] = row.value || "";
+    renderPaymentSettings(map);
+  }
+
+  function renderPaymentSettings(map) {
+    paymentSettingsWrap.innerHTML = `
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label>PromptPay ID (เบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลัก)</label>
+            <input type="text" id="ppId" value="${escapeHtml(map.promptpay_id || "")}" placeholder="เช่น 0891234567" />
+          </div>
+          <div class="field">
+            <label>ชื่อบัญชี (โชว์ให้ลูกค้าดู)</label>
+            <input type="text" id="ppName" value="${escapeHtml(map.promptpay_name || "")}" placeholder="เช่น Nawin Resort Khaokho" />
+          </div>
+        </div>
+        <div class="field">
+          <label>ข้อความสำรอง (แสดงถ้ายังไม่ตั้งค่า PromptPay ID)</label>
+          <textarea id="ppNote" rows="2">${escapeHtml(map.payment_note || "")}</textarea>
+        </div>
+        <button class="primary" id="savePaymentSettingsBtn">บันทึก</button>
+      </div>
+      <p style="color:var(--ink-soft); font-size:0.82rem; margin-top:8px;">
+        ${map.promptpay_id ? "✅ ตั้งค่าแล้ว — ลูกค้าจะเห็น QR PromptPay จริงตอนจอง" : "⚠️ ยังไม่ได้ใส่ PromptPay ID — ลูกค้าจะเห็นข้อความสำรองแทน QR"}
+      </p>
+    `;
+    document.getElementById("savePaymentSettingsBtn").addEventListener("click", savePaymentSettings);
+  }
+
+  async function savePaymentSettings() {
+    const values = {
+      promptpay_id: document.getElementById("ppId").value.trim(),
+      promptpay_name: document.getElementById("ppName").value.trim(),
+      payment_note: document.getElementById("ppNote").value.trim(),
+    };
+    const btn = document.getElementById("savePaymentSettingsBtn");
+    btn.disabled = true;
+    for (const [key, value] of Object.entries(values)) {
+      const { error } = await supabase.from("resort_settings").update({ value }).eq("key", key);
+      if (error) {
+        showMsg("บันทึกไม่สำเร็จ: " + error.message);
+        btn.disabled = false;
+        return;
+      }
+    }
+    showMsg("บันทึกตั้งค่าการชำระเงินสำเร็จ", "success");
+    await loadPaymentSettings();
+  }
+
   function typeLabel(t) {
     return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
   }
@@ -321,14 +391,88 @@
   async function reload() {
     const { data: units, error } = await supabase
       .from("units")
-      .select("id, code, name, unit_type, base_price, capacity, is_active")
+      .select("id, code, name, unit_type, base_price, capacity, is_active, photo_urls")
       .order("code");
     if (error) {
       unitsTableWrap.innerHTML = `<div class="msg error">โหลดยูนิตไม่สำเร็จ: ${error.message}</div>`;
       return;
     }
-    renderUnits(units || []);
-    await loadReport(units || []);
+    currentUnits = units || [];
+    renderUnits(currentUnits);
+    renderUnitPhotos(currentUnits);
+    await loadReport(currentUnits);
+  }
+
+  function renderUnitPhotos(units) {
+    if (!units.length) {
+      unitPhotosWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
+      return;
+    }
+    unitPhotosWrap.innerHTML = units
+      .map(
+        (u) => `
+      <div class="card" style="margin-bottom:14px;">
+        <div style="font-weight:600; margin-bottom:8px;">${escapeHtml(u.name)} (${escapeHtml(u.code)})</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          ${(u.photo_urls || [])
+            .map(
+              (url, i) => `
+            <div style="position:relative;">
+              <img src="${url}" style="width:100px; height:75px; object-fit:cover; border-radius:8px; border:1px solid var(--line);" />
+              <button data-remove-photo="${u.id}" data-photo-index="${i}" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:none; background:var(--danger); color:#fff; font-size:0.7rem; cursor:pointer; line-height:1;">×</button>
+            </div>`,
+            )
+            .join("")}
+        </div>
+        <input type="file" accept="image/*" data-photo-input="${u.id}" style="max-width:260px;" />
+      </div>`,
+      )
+      .join("");
+
+    unitPhotosWrap.querySelectorAll("input[data-photo-input]").forEach((input) => {
+      input.addEventListener("change", () => uploadUnitPhoto(input));
+    });
+    unitPhotosWrap.querySelectorAll("button[data-remove-photo]").forEach((btn) => {
+      btn.addEventListener("click", () => removeUnitPhoto(btn.dataset.removePhoto, Number(btn.dataset.photoIndex)));
+    });
+  }
+
+  async function uploadUnitPhoto(input) {
+    const unitId = input.dataset.photoInput;
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return showMsg("ไฟล์ใหญ่เกินไป (สูงสุด 5MB)");
+
+    input.disabled = true;
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${unitId}/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("unit-photos").upload(path, file);
+    if (upErr) {
+      showMsg("อัปโหลดรูปไม่สำเร็จ: " + upErr.message);
+      input.disabled = false;
+      return;
+    }
+    const { data: pub } = supabase.storage.from("unit-photos").getPublicUrl(path);
+    const unit = currentUnits.find((u) => u.id === unitId);
+    const newUrls = [...(unit?.photo_urls || []), pub.publicUrl];
+    const { error: updErr } = await supabase.from("units").update({ photo_urls: newUrls }).eq("id", unitId);
+    if (updErr) {
+      showMsg("บันทึกรูปไม่สำเร็จ: " + updErr.message);
+      input.disabled = false;
+      return;
+    }
+    showMsg("เพิ่มรูปสำเร็จ", "success");
+    await reload();
+  }
+
+  async function removeUnitPhoto(unitId, index) {
+    const unit = currentUnits.find((u) => u.id === unitId);
+    if (!unit) return;
+    const newUrls = (unit.photo_urls || []).filter((_, i) => i !== index);
+    const { error } = await supabase.from("units").update({ photo_urls: newUrls }).eq("id", unitId);
+    if (error) return showMsg("ลบรูปไม่สำเร็จ: " + error.message);
+    showMsg("ลบรูปแล้ว", "success");
+    await reload();
   }
 
   async function init() {
@@ -351,7 +495,7 @@
     isOwner = true;
 
     renderAddForm();
-    await Promise.all([reload(), loadStaff()]);
+    await Promise.all([reload(), loadStaff(), loadPaymentSettings()]);
   }
 
   init();

@@ -64,3 +64,24 @@ export const STATUS_TH = {
   cancelled: "ยกเลิกแล้ว",
   no_show: "ไม่มาเข้าพัก",
 };
+
+export async function getResortSettings() {
+  const { data, error } = await supabase.from("resort_settings").select("key, value");
+  if (error) throw error;
+  const map = {};
+  for (const row of data || []) map[row.key] = row.value;
+  return map;
+}
+
+export function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // reader.result is "data:<mime>;base64,<data>" — strip the prefix.
+      const base64 = String(reader.result).split(",")[1] || "";
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error("อ่านไฟล์ไม่สำเร็จ"));
+    reader.readAsDataURL(file);
+  });
+}

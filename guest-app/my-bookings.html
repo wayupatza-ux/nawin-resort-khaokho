@@ -21,10 +21,65 @@
   </nav>
 </div>
 <script type="module">
-  import { ensureLiff, getIdToken, callGuestApi, fmtDate, fmtBaht, STATUS_TH } from "./assets/app.js";
+  import { ensureLiff, getIdToken, callGuestApi, fmtDate, fmtBaht, STATUS_TH, getResortSettings, fileToBase64 } from "./assets/app.js";
+  import { buildPromptPayPayload, qrImageUrl } from "./assets/promptpay.js";
 
   const main = document.getElementById("main");
   let idToken = null;
+  let settings = {};
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function paymentDeadline(createdAt) {
+    return new Date(new Date(createdAt).getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  function fmtDeadline(d) {
+    return d.toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function paymentCardHtml(b) {
+    if (b.status !== "pending") return "";
+
+    if (b.hasPendingSlip) {
+      return `
+        <div class="msg info" style="margin-top:10px;">
+          ได้รับสลิปแล้ว กำลังรอเจ้าหน้าที่ตรวจสอบและยืนยันการชำระเงิน
+        </div>`;
+    }
+
+    const deadline = paymentDeadline(b.created_at);
+    const deadlineText = `ชำระภายใน ${fmtDeadline(deadline)} มิฉะนั้นระบบจะยกเลิกการจองอัตโนมัติ`;
+
+    let payBlock;
+    if (settings.promptpay_id) {
+      const payload = buildPromptPayPayload(settings.promptpay_id, b.total_amount);
+      payBlock = `
+        <img src="${qrImageUrl(payload)}" alt="PromptPay QR" style="width:100%; max-width:220px; display:block; margin:10px auto; border-radius:10px;" />
+        <div style="text-align:center; font-size:0.85rem; color:var(--ink-soft);">
+          พร้อมเพย์: ${escapeHtml(settings.promptpay_name || "Nawin Resort Khaokho")}<br/>
+          ยอดชำระ <strong style="color:var(--clay-dark);">${fmtBaht(b.total_amount)}</strong>
+        </div>`;
+    } else {
+      payBlock = `<div class="msg info">${escapeHtml(settings.payment_note || "กรุณาติดต่อรีสอร์ทเพื่อสอบถามช่องทางชำระเงิน")}</div>`;
+    }
+
+    return `
+      <div class="card" style="margin-top:10px; border-color:var(--clay);">
+        <div class="msg error" style="margin-bottom:10px;">
+          ⚠️ รีสอร์ทจะ<strong>ไม่มีการขอให้โอนเงินผ่านแชทหรือช่องทางอื่น</strong>เด็ดขาด — ชำระผ่านหน้านี้เท่านั้น
+        </div>
+        ${payBlock}
+        <div class="msg info" style="margin-top:10px;">${deadlineText}</div>
+        <label style="margin-top:12px;">แนบสลิปการโอนเงิน</label>
+        <input type="file" accept="image/*" data-slip-input="${b.id}" />
+        <button class="primary" data-slip-submit="${b.id}" style="margin-top:8px;" disabled>อัปโหลดสลิป</button>
+      </div>`;
+  }
 
   function render(bookings) {
     if (!bookings.length) {
@@ -44,6 +99,7 @@
           ${fmtDate(b.check_in)} — ${fmtDate(b.check_out)} · ${b.num_guests} คน
         </div>
         <div style="margin-top:6px; font-weight:600; color:var(--clay-dark);">${fmtBaht(b.total_amount)}</div>
+        ${paymentCardHtml(b)}
         ${
           ["pending", "confirmed"].includes(b.status)
             ? `<button class="ghost" data-id="${b.id}" style="margin-top:10px;">ยกเลิกการจอง</button>`
@@ -56,6 +112,35 @@
     main.querySelectorAll("button[data-id]").forEach((btn) => {
       btn.addEventListener("click", () => cancelBooking(btn.dataset.id, btn));
     });
+
+    main.querySelectorAll("input[data-slip-input]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const btn = main.querySelector(`button[data-slip-submit="${input.dataset.slipInput}"]`);
+        btn.disabled = !input.files.length;
+      });
+    });
+
+    main.querySelectorAll("button[data-slip-submit]").forEach((btn) => {
+      btn.addEventListener("click", () => uploadSlip(btn.dataset.slipSubmit, btn));
+    });
+  }
+
+  async function uploadSlip(bookingId, btn) {
+    const input = main.querySelector(`input[data-slip-input="${bookingId}"]`);
+    const file = input.files[0];
+    if (!file) return;
+
+    btn.disabled = true;
+    btn.textContent = "กำลังอัปโหลด...";
+    try {
+      const slipBase64 = await fileToBase64(file);
+      await callGuestApi("/upload-slip", { idToken, bookingId, slipBase64, mimeType: file.type });
+      await load();
+    } catch (e) {
+      alert(e.message || "อัปโหลดสลิปไม่สำเร็จ");
+      btn.disabled = false;
+      btn.textContent = "อัปโหลดสลิป";
+    }
   }
 
   async function cancelBooking(bookingId, btn) {
@@ -82,6 +167,7 @@
     try {
       await ensureLiff();
       idToken = await getIdToken();
+      settings = await getResortSettings().catch(() => ({}));
       await load();
     } catch (e) {
       main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
