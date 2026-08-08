@@ -52,13 +52,14 @@
           <input type="number" id="numGuests" min="1" value="1" />
         </div>
         <div class="field">
-          <label>ยอดรวม (บาท) — เว้นว่างเพื่อคำนวณอัตโนมัติ</label>
-          <input type="number" id="totalAmount" min="0" step="0.01" />
+          <label>ยอดรวม (บาท)</label>
+          <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกยูนิต+วันที่ก่อน" />
+          <div id="priceHint" style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;"></div>
         </div>
       </div>
       <div class="field">
         <label>หมายเหตุ</label>
-        <textarea id="notes" rows="2"></textarea>
+        <textarea id="notes" rows="2" placeholder="เช่น เหตุผลที่ปรับราคา — เช็คอินช้า, ลูกค้าประจำ ฯลฯ"></textarea>
       </div>
       <button type="submit" class="primary" id="submitBtn">บันทึกการจอง</button>
     </form>
@@ -68,9 +69,58 @@
   import { supabase, requireSession, logout } from "./assets/app.js";
 
   let units = [];
+  let totalTouchedByUser = false;
 
   function showMsg(text, kind = "error") {
     document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
+  }
+
+  function fmtBaht(n) {
+    return Number(n).toLocaleString("th-TH", { maximumFractionDigits: 0 }) + " บาท";
+  }
+
+  function computeStandardPrice() {
+    const unitId = document.getElementById("unitId").value;
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    const opt = document.querySelector(`#unitId option[value="${unitId}"]`);
+    const price = Number(opt?.dataset.price || 0);
+    if (!unitId || !checkIn || !checkOut || checkOut <= checkIn) return null;
+    const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
+    return { price, nights, total: price * nights };
+  }
+
+  function recalcPrice() {
+    const calc = computeStandardPrice();
+    const hint = document.getElementById("priceHint");
+    const totalInput = document.getElementById("totalAmount");
+
+    if (!calc) {
+      hint.textContent = "";
+      return;
+    }
+
+    const resetLink = totalTouchedByUser
+      ? ` · <a href="#" id="resetPriceLink" style="color:var(--clay-dark);">ใช้ราคาปกติ</a>`
+      : "";
+    hint.innerHTML = `ราคาปกติ ${fmtBaht(calc.price)} x ${calc.nights} คืน = <strong>${fmtBaht(calc.total)}</strong>${resetLink}`;
+
+    const resetEl = document.getElementById("resetPriceLink");
+    if (resetEl) {
+      resetEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        totalTouchedByUser = false;
+        totalInput.value = calc.total;
+        recalcPrice();
+      });
+    }
+
+    // Only auto-fill if the staff member hasn't manually typed a different
+    // amount yet — once they touch the field (e.g. to give a discount),
+    // changing the unit/dates again won't silently overwrite their price.
+    if (!totalTouchedByUser) {
+      totalInput.value = calc.total;
+    }
   }
 
   function genBookingRef() {
@@ -124,11 +174,10 @@
     if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
 
     if (!totalAmount) {
-      const opt = document.querySelector(`#unitId option[value="${unitId}"]`);
-      const price = Number(opt?.dataset.price || 0);
-      const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
-      totalAmount = price * nights;
+      const calc = computeStandardPrice();
+      totalAmount = calc ? calc.total : 0;
     }
+    if (Number(totalAmount) <= 0) return showMsg("กรอกยอดรวมให้ถูกต้อง");
 
     btn.disabled = true;
     btn.textContent = "กำลังบันทึก...";
@@ -158,6 +207,8 @@
 
       showMsg("บันทึกการจองสำเร็จ", "success");
       document.getElementById("form").reset();
+      totalTouchedByUser = false;
+      document.getElementById("priceHint").textContent = "";
     } catch (e2) {
       showMsg(e2.message || "บันทึกไม่สำเร็จ");
     } finally {
@@ -168,10 +219,19 @@
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
 
+  document.getElementById("unitId").addEventListener("change", recalcPrice);
+  document.getElementById("checkIn").addEventListener("change", recalcPrice);
+  document.getElementById("checkOut").addEventListener("change", recalcPrice);
+  document.getElementById("totalAmount").addEventListener("input", () => {
+    totalTouchedByUser = true;
+    recalcPrice();
+  });
+
   async function init() {
     const session = await requireSession();
     if (!session) return;
     await loadUnits();
+    recalcPrice();
   }
 
   init();
