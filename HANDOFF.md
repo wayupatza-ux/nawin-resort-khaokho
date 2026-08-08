@@ -28,7 +28,7 @@
 1. เข้า [LINE Developers Console](https://developers.line.biz/console/) → สร้าง Provider ใหม่หรือใช้ของเดิม → สร้าง **Messaging API channel** ใหม่ ตั้งชื่อ "Nawin Resort Khaokho"
    - ไปที่แท็บ "Messaging API" → คัดลอก **Channel secret** และออก **Channel access token (long-lived)**
 2. ในเดียวกัน (provider เดียวกัน) สร้าง **LINE Login channel** ใหม่
-   - เปิดใช้ LIFF: ไปแท็บ "LIFF" → Add → ตั้งชื่อ "จองที่พัก", Size: Full, Endpoint URL: `https://<โดเมนที่ deploy>/guest-app/index.html`
+   - เปิดใช้ LIFF: ไปแท็บ "LIFF" → Add → ตั้งชื่อ "จองที่พัก", Size: Full, Endpoint URL: `https://khaokho.nawingroup.com/guest-app/index.html`
    - คัดลอก **LIFF ID** ที่ได้
    - คัดลอก **Channel ID** ของ LINE Login channel นี้ด้วย (ใช้ verify ID token)
 3. อัปเดตค่าจริงลง Supabase Vault (รัน SQL ใน Supabase SQL editor ของ project `nawin-resort-khaokho`):
@@ -52,9 +52,23 @@
 ### 2b. ตรวจสอบ internal_functions_secret
 มีการสุ่มค่าไว้แล้วตอน setup (SECURITY DEFINER trigger ↔ `line-notify` function ใช้ยืนยันกัน) — เป็นค่าที่ตั้งไว้ใน Vault ของ project แล้ว ไม่ต้องแก้อะไรเพิ่ม เว้นแต่ต้องการหมุนค่าใหม่ (rotate) ก็ทำผ่าน `vault.update_secret` เหมือนข้างบน แล้วอย่าลืมว่าไม่มีที่อื่นอ้างอิงค่านี้นอกจาก DB trigger เอง
 
-### 3. เลือกวิธี hosting
-- **แนะนำ: GitHub Pages** — repo นี้ตั้งใจทำเป็น public ตั้งแต่แรก เปิด Pages ได้ทันทีไม่ติดปัญหาเหมือนโรงแรมดอนเมือง (Settings → Pages → Deploy from branch `main` / root) จะได้ URL แบบ `https://wayupatza-ux.github.io/nawin-resort-khaokho/guest-app/` และ `.../dashboard/`
-- ทางเลือก: ต่อ Netlify เอง (ต้อง login Netlify เอง ผมทำแทนไม่ได้) — ถ้าอยากได้ custom domain สวยกว่า
+### 3. Hosting — GitHub Pages + custom domain (เสร็จแล้ว ยกเว้นขั้นตอน DNS)
+เปิด GitHub Pages ให้แล้ว (Settings → Pages → Deploy from branch `main` / root) และตั้ง custom domain เป็น `khaokho.nawingroup.com` ในฝั่ง GitHub แล้ว (มีไฟล์ `CNAME` ที่ root ของ repo) — URL เดิม `https://wayupatza-ux.github.io/nawin-resort-khaokho/...` ยังใช้งานได้อยู่จนกว่า DNS จะชี้มาที่นี่
+
+**เหลือขั้นตอนเดียวที่บอสตองต้องทำเอง — ตั้งค่า DNS ที่ registrar ของโดเมน `nawingroup.com`:**
+
+เพิ่ม CNAME record:
+| Type  | Name (Host) | Value |
+|---|---|---|
+| CNAME | `khaokho` | `wayupatza-ux.github.io` |
+
+(ถ้า registrar ไม่รองรับ CNAME สำหรับ subdomain ที่มี root domain apex อื่นอยู่ด้วย ให้เช็คว่าใช้ประเภท "CNAME" ธรรมดาได้เลยเพราะ `khaokho` เป็น subdomain ไม่ใช่ apex/root — ไม่ต้องใช้ A record แบบ apex)
+
+หลัง DNS propagate (ปกติ 10 นาที–24 ชม.) GitHub จะออก SSL certificate ให้อัตโนมัติ แล้วเว็บจะใช้งานได้ที่:
+- Guest app: `https://khaokho.nawingroup.com/guest-app/`
+- Dashboard: `https://khaokho.nawingroup.com/dashboard/`
+
+**หมายเหตุ**: ทำไมไม่ใช้ `nawingroup.com/khaokho` (path บน root domain) — GitHub Pages ผูก 1 โดเมนต่อ 1 repo เท่านั้น ไม่รองรับแบ่ง path ไปคนละเว็บ ถ้าต้องการแบบนั้นจริงๆ ต้องเพิ่ม Cloudflare Worker (หรือ reverse proxy อื่น) มาทำ path routing เพิ่ม ซึ่งซับซ้อนกว่ามากและต้องดูแลเพิ่ม — ใช้ subdomain แทนจะเก็บ `nawingroup.com` root ไว้ว่างสำหรับเว็บบริษัทหลักในอนาคตได้ด้วย
 
 ### 4. สร้าง Supabase Auth user สำหรับตัวเอง (owner)
 เข้า Supabase Dashboard → Authentication → Users → Add user (ใส่อีเมล+รหัสผ่านเอง) จากนั้นรัน SQL เพื่อผูก role owner:
