@@ -26,6 +26,8 @@
 
     <h3 style="margin-bottom:10px;">ยูนิตทั้งหมด</h3>
     <div id="unitsTableWrap"><div class="empty">กำลังโหลด...</div></div>
+
+    <div id="addUnitWrap" style="margin-top:20px;"></div>
   </div>
 </div>
 <script type="module">
@@ -33,6 +35,8 @@
 
   const kpiRow = document.getElementById("kpiRow");
   const unitsTableWrap = document.getElementById("unitsTableWrap");
+  const addUnitWrap = document.getElementById("addUnitWrap");
+  let isOwner = false;
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
 
@@ -90,26 +94,30 @@
       unitsTableWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
       return;
     }
+    const disabled = isOwner ? "" : "disabled";
     unitsTableWrap.innerHTML = `
       <table>
-        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ประเภท</th><th>ราคา/คืน</th><th>ความจุ</th><th>เปิดใช้งาน</th></tr></thead>
+        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ประเภท</th><th>ราคา/คืน</th><th>ความจุ</th><th>เปิดใช้งาน</th>${isOwner ? "<th></th>" : ""}</tr></thead>
         <tbody>
           ${units
             .map(
               (u) => `
             <tr>
               <td>${u.code}</td>
-              <td><input type="text" data-field="name" data-id="${u.id}" value="${u.name}" style="width:140px;" /></td>
+              <td><input type="text" data-field="name" data-id="${u.id}" value="${u.name}" style="width:140px;" ${disabled} /></td>
               <td>${typeLabel(u.unit_type)}</td>
-              <td><input type="number" data-field="base_price" data-id="${u.id}" value="${u.base_price}" style="width:100px;" /></td>
-              <td><input type="number" data-field="capacity" data-id="${u.id}" value="${u.capacity}" style="width:70px;" /></td>
-              <td><input type="checkbox" data-field="is_active" data-id="${u.id}" ${u.is_active ? "checked" : ""} /></td>
+              <td><input type="number" data-field="base_price" data-id="${u.id}" value="${u.base_price}" style="width:100px;" ${disabled} /></td>
+              <td><input type="number" data-field="capacity" data-id="${u.id}" value="${u.capacity}" style="width:70px;" ${disabled} /></td>
+              <td><input type="checkbox" data-field="is_active" data-id="${u.id}" ${u.is_active ? "checked" : ""} ${disabled} /></td>
+              ${isOwner ? `<td><button class="ghost" data-delete-id="${u.id}" data-delete-code="${u.code}">ลบ</button></td>` : ""}
             </tr>`,
             )
             .join("")}
         </tbody>
       </table>
-      <p style="color:var(--ink-soft); font-size:0.82rem; margin-top:10px;">แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ</p>
+      <p style="color:var(--ink-soft); font-size:0.82rem; margin-top:10px;">
+        ${isOwner ? "แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ" : "เฉพาะเจ้าของ (owner) เท่านั้นที่แก้ไขยูนิตได้"}
+      </p>
     `;
 
     unitsTableWrap.querySelectorAll("input[data-field]").forEach((input) => {
@@ -119,6 +127,81 @@
         input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
       }
     });
+
+    unitsTableWrap.querySelectorAll("button[data-delete-id]").forEach((btn) => {
+      btn.addEventListener("click", () => deleteUnit(btn));
+    });
+  }
+
+  function renderAddForm() {
+    if (!isOwner) {
+      addUnitWrap.innerHTML = "";
+      return;
+    }
+    addUnitWrap.innerHTML = `
+      <h3 style="margin-bottom:10px;">เพิ่มยูนิตใหม่</h3>
+      <div class="row">
+        <div class="field"><label>รหัส (unique)</label><input type="text" id="newCode" placeholder="เช่น HOUSE-3" /></div>
+        <div class="field"><label>ชื่อ</label><input type="text" id="newName" placeholder="เช่น บ้านพัก 3" /></div>
+        <div class="field">
+          <label>ประเภท</label>
+          <select id="newType">
+            <option value="house">บ้านพัก</option>
+            <option value="tent">เต็นท์กระโจม</option>
+            <option value="other">อื่นๆ</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>ราคา/คืน (บาท)</label><input type="number" id="newPrice" min="0" step="1" value="1000" /></div>
+        <div class="field"><label>ความจุ (คน)</label><input type="number" id="newCapacity" min="1" value="2" /></div>
+      </div>
+      <button class="primary" id="addUnitBtn">เพิ่มยูนิต</button>
+    `;
+    document.getElementById("addUnitBtn").addEventListener("click", addUnit);
+  }
+
+  async function addUnit() {
+    const code = document.getElementById("newCode").value.trim();
+    const name = document.getElementById("newName").value.trim();
+    const unit_type = document.getElementById("newType").value;
+    const base_price = Number(document.getElementById("newPrice").value);
+    const capacity = Number(document.getElementById("newCapacity").value);
+
+    if (!code || !name || !base_price || !capacity) return showMsg("กรอกข้อมูลให้ครบ");
+
+    const btn = document.getElementById("addUnitBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังเพิ่ม...";
+    const { error } = await supabase.from("units").insert({ code, name, unit_type, base_price, capacity });
+    btn.disabled = false;
+    btn.textContent = "เพิ่มยูนิต";
+
+    if (error) {
+      showMsg(error.code === "23505" ? "รหัสยูนิตนี้มีอยู่แล้ว" : "เพิ่มยูนิตไม่สำเร็จ: " + error.message);
+      return;
+    }
+    showMsg("เพิ่มยูนิตสำเร็จ", "success");
+    await reload();
+  }
+
+  async function deleteUnit(btn) {
+    const id = btn.dataset.deleteId;
+    const code = btn.dataset.deleteCode;
+    if (!confirm(`ลบยูนิต "${code}" ถาวร? (ถ้ามีการจองอยู่จะลบไม่ได้ ให้ปิด "เปิดใช้งาน" แทน)`)) return;
+    btn.disabled = true;
+    const { error } = await supabase.from("units").delete().eq("id", id);
+    if (error) {
+      showMsg(
+        error.code === "23503"
+          ? "ลบไม่ได้เพราะมีการจองผูกกับยูนิตนี้อยู่ — ปิด \"เปิดใช้งาน\" แทนการลบ"
+          : "ลบไม่สำเร็จ: " + error.message,
+      );
+      btn.disabled = false;
+      return;
+    }
+    showMsg("ลบยูนิตแล้ว", "success");
+    await reload();
   }
 
   async function saveUnitField(input) {
@@ -130,10 +213,7 @@
     else showMsg("บันทึกแล้ว", "success");
   }
 
-  async function init() {
-    const session = await requireSession();
-    if (!session) return;
-
+  async function reload() {
     const { data: units, error } = await supabase
       .from("units")
       .select("id, code, name, unit_type, base_price, capacity, is_active")
@@ -144,6 +224,21 @@
     }
     renderUnits(units || []);
     await loadReport(units || []);
+  }
+
+  async function init() {
+    const session = await requireSession();
+    if (!session) return;
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", session.user.id)
+      .maybeSingle();
+    isOwner = profile?.role === "owner";
+
+    renderAddForm();
+    await reload();
   }
 
   init();
