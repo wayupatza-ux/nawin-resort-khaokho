@@ -32,7 +32,7 @@
     main.innerHTML = `
       <div id="msgBox"></div>
       <section class="card">
-        <h3>ยูนิต</h3>
+        <h3>ห้อง</h3>
         <select id="unitId">
           ${units.map((u) => `<option value="${u.id}" data-price="${u.base_price}">${u.name} (${fmtBaht(u.base_price)}/คืน)</option>`).join("")}
         </select>
@@ -51,7 +51,7 @@
         <div class="field"><label>จำนวนผู้เข้าพัก</label><input type="number" id="numGuests" min="1" value="1" /></div>
         <div class="field">
           <label>ยอดรวม (บาท)</label>
-          <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกยูนิต+วันที่ก่อน" />
+          <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกห้อง+วันที่ก่อน" />
           <div id="priceHint" style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;"></div>
         </div>
         <div class="field"><label>หมายเหตุ</label><textarea id="notes" rows="2" placeholder="เช่น เหตุผลที่ปรับราคา"></textarea></div>

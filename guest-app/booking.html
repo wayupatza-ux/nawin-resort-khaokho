@@ -31,7 +31,7 @@
     main.innerHTML = `
       <div id="msgBox"></div>
       <section class="card">
-        <h3>เลือกยูนิต</h3>
+        <h3>เลือกห้อง</h3>
         <div id="unitList"></div>
       </section>
       <section class="card">
@@ -60,7 +60,7 @@
 
     const unitList = document.getElementById("unitList");
     if (units.length === 0) {
-      unitList.innerHTML = `<div class="empty">ยังไม่มียูนิตเปิดให้จอง</div>`;
+      unitList.innerHTML = `<div class="empty">ยังไม่มีห้องเปิดให้จอง</div>`;
     } else {
       unitList.innerHTML = units
         .map(
@@ -110,7 +110,7 @@
     const numGuests = Number(document.getElementById("numGuests").value) || 1;
     const notes = document.getElementById("notes").value;
 
-    if (!selectedUnitId) return showMsg("กรุณาเลือกยูนิตที่ต้องการจอง");
+    if (!selectedUnitId) return showMsg("กรุณาเลือกห้องที่ต้องการจอง");
     if (!checkIn || !checkOut) return showMsg("กรุณาเลือกวันเช็คอินและเช็คเอาท์");
     if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
 

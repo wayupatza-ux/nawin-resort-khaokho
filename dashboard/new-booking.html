@@ -13,7 +13,7 @@
     <a href="./bookings.html">การจอง</a>
     <a href="./new-booking.html" class="active">เพิ่มการจอง (walk-in)</a>
     <a href="./payments.html">ชำระเงิน</a>
-    <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
+    <a href="./units.html" data-owner-only>ห้อง &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
   </nav>
   <div class="content" style="max-width:560px;">
@@ -34,7 +34,7 @@
         </div>
       </div>
       <div class="field">
-        <label>ยูนิต</label>
+        <label>ห้อง</label>
         <select id="unitId" required></select>
       </div>
       <div class="row">
@@ -54,7 +54,7 @@
         </div>
         <div class="field">
           <label>ยอดรวม (บาท)</label>
-          <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกยูนิต+วันที่ก่อน" />
+          <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกห้อง+วันที่ก่อน" />
           <div id="priceHint" style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;"></div>
         </div>
       </div>
@@ -125,10 +125,14 @@
     }
   }
 
+  // Short (6-char) reference — easy to read/type over the phone. Excludes
+  // 0/O/1/I to avoid ambiguity. booking_ref is UNIQUE in the DB; on the
+  // rare collision the insert below retries with a fresh code.
+  const REF_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
   function genBookingRef() {
-    const rand = crypto.randomUUID().split("-")[0].toUpperCase();
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    return `NRK-${date}-${rand}`;
+    let code = "";
+    for (let i = 0; i < 6; i++) code += REF_CHARS[Math.floor(Math.random() * REF_CHARS.length)];
+    return code;
   }
 
   async function loadUnits() {
@@ -137,7 +141,7 @@
       .select("id, name, base_price")
       .eq("is_active", true)
       .order("name");
-    if (error) return showMsg("โหลดยูนิตไม่สำเร็จ: " + error.message);
+    if (error) return showMsg("โหลดห้องไม่สำเร็จ: " + error.message);
     units = data || [];
     const sel = document.getElementById("unitId");
     sel.innerHTML = units.map((u) => `<option value="${u.id}" data-price="${u.base_price}">${u.name} (${u.base_price} บาท/คืน)</option>`).join("");
@@ -190,22 +194,27 @@
         p_check_out: checkOut,
       });
       if (availErr) throw availErr;
-      if (!available) throw new Error("ยูนิตนี้ไม่ว่างในช่วงวันที่เลือก");
+      if (!available) throw new Error("ห้องนี้ไม่ว่างในช่วงวันที่เลือก");
 
       const guestId = await getOrCreateGuest(name, phone);
-      const { error } = await supabase.from("bookings").insert({
-        booking_ref: genBookingRef(),
-        guest_id: guestId,
-        unit_id: unitId,
-        check_in: checkIn,
-        check_out: checkOut,
-        num_guests: numGuests,
-        total_amount: totalAmount,
-        source: "walk-in",
-        notes: notes || null,
-        status: "confirmed",
-        created_by: currentSession?.user?.id ?? null,
-      });
+      let error;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const result = await supabase.from("bookings").insert({
+          booking_ref: genBookingRef(),
+          guest_id: guestId,
+          unit_id: unitId,
+          check_in: checkIn,
+          check_out: checkOut,
+          num_guests: numGuests,
+          total_amount: totalAmount,
+          source: "walk-in",
+          notes: notes || null,
+          status: "confirmed",
+          created_by: currentSession?.user?.id ?? null,
+        });
+        error = result.error;
+        if (!error || error.code !== "23505") break;
+      }
       if (error) throw error;
 
       showMsg("บันทึกการจองสำเร็จ", "success");

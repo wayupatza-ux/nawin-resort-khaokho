@@ -13,7 +13,7 @@
     <a href="./bookings.html" class="active">การจอง</a>
     <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
     <a href="./payments.html">ชำระเงิน</a>
-    <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
+    <a href="./units.html" data-owner-only>ห้อง &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
   </nav>
   <div class="content">
@@ -44,7 +44,7 @@
     <div class="toolbar">
       <div class="field">
         <label>ค้นหา (เลขจอง / ชื่อแขก)</label>
-        <input type="text" id="searchQuery" placeholder="เช่น NRK-2026 หรือ สมชาย" />
+        <input type="text" id="searchQuery" placeholder="เช่น A3F9K2 หรือ สมชาย" />
       </div>
       <div class="field">
         <label>สถานะ</label>
@@ -156,7 +156,7 @@
 
   function renderCalendar(units, bookings, monthStart, daysInMonth) {
     if (!units.length) {
-      calWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
+      calWrap.innerHTML = `<div class="empty">ยังไม่มีห้อง</div>`;
       return;
     }
 
@@ -166,7 +166,7 @@
       return { date: d, iso: toISODate(d) };
     });
 
-    let html = `<table class="cal-table"><thead><tr><th class="cal-unit-col">ยูนิต</th>`;
+    let html = `<table class="cal-table"><thead><tr><th class="cal-unit-col">ห้อง</th>`;
     for (const d of days) {
       const dow = d.date.getDay();
       const weekend = dow === 0 || dow === 6;
@@ -263,7 +263,7 @@
       <table>
         <thead>
           <tr>
-            <th>เลขที่จอง</th><th>ยูนิต</th><th>แขก</th><th>เช็คอิน</th><th>เช็คเอาท์</th>
+            <th>เลขที่จอง</th><th>ห้อง</th><th>แขก</th><th>เช็คอิน</th><th>เช็คเอาท์</th>
             <th>คน</th><th>ยอดเงิน</th><th>จองโดย</th><th>สถานะ</th>
           </tr>
         </thead>

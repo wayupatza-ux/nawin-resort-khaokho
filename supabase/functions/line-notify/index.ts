@@ -63,7 +63,7 @@ Deno.serve(async (req: Request) => {
   const text =
     `ยืนยันการจองสำเร็จ ✅\n` +
     `เลขที่จอง: ${booking.booking_ref}\n` +
-    `ยูนิต: ${booking.units?.name ?? "-"}\n` +
+    `ห้อง: ${booking.units?.name ?? "-"}\n` +
     `เช็คอิน: ${booking.check_in}\n` +
     `เช็คเอาท์: ${booking.check_out}\n` +
     `Nawin Resort Khaokho`;

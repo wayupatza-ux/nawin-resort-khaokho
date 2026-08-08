@@ -77,10 +77,27 @@ async function getOrCreateGuest(name: string, phone?: string) {
   return created.id as string;
 }
 
-function genBookingRef() {
-  const rand = crypto.randomUUID().split("-")[0].toUpperCase();
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  return `NRK-${date}-${rand}`;
+// Short (6-char) reference — easy to read/type over the phone. Excludes
+// 0/O/1/I to avoid ambiguity. booking_ref is UNIQUE in the DB, so on the
+// rare collision we just retry with a fresh code.
+const REF_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+function genBookingRef(): string {
+  let code = "";
+  for (let i = 0; i < 6; i++) code += REF_CHARS[Math.floor(Math.random() * REF_CHARS.length)];
+  return code;
+}
+
+async function insertBookingWithRetry(fields: Record<string, unknown>) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data, error } = await supabase
+      .from("bookings")
+      .insert({ ...fields, booking_ref: genBookingRef() })
+      .select("id, booking_ref, status, total_amount")
+      .single();
+    if (!error) return { data, error: null as any };
+    if (error.code !== "23505") return { data: null, error };
+  }
+  return { data: null, error: { code: "23505", message: "could not generate a unique booking ref" } as any };
 }
 
 async function handleMe(req: Request) {
@@ -135,7 +152,7 @@ async function handleBook(req: Request) {
     p_check_out: checkOut,
   });
   if (availErr) return json({ error: "availability check failed" }, 500);
-  if (!available) return json({ error: "ยูนิตนี้ไม่ว่างในช่วงวันที่เลือก" }, 409);
+  if (!available) return json({ error: "ห้องนี้ไม่ว่างในช่วงวันที่เลือก" }, 409);
 
   const { data: unit, error: unitErr } = await supabase
     .from("units")
@@ -153,27 +170,22 @@ async function handleBook(req: Request) {
 
   const guestId = await getOrCreateGuest(guestName, guestPhone);
 
-  const { data: booking, error: bookingErr } = await supabase
-    .from("bookings")
-    .insert({
-      booking_ref: genBookingRef(),
-      guest_id: guestId,
-      unit_id: unitId,
-      check_in: checkIn,
-      check_out: checkOut,
-      num_guests: numGuests ?? 1,
-      total_amount: totalAmount,
-      source: "staff-liff",
-      notes: notes ?? null,
-      status: "confirmed",
-      created_by: staff.id,
-    })
-    .select("id, booking_ref, status, total_amount")
-    .single();
+  const { data: booking, error: bookingErr } = await insertBookingWithRetry({
+    guest_id: guestId,
+    unit_id: unitId,
+    check_in: checkIn,
+    check_out: checkOut,
+    num_guests: numGuests ?? 1,
+    total_amount: totalAmount,
+    source: "staff-liff",
+    notes: notes ?? null,
+    status: "confirmed",
+    created_by: staff.id,
+  });
 
   if (bookingErr) {
     if (bookingErr.code === "23P01") {
-      return json({ error: "ยูนิตนี้ถูกจองไปแล้วในช่วงเวลาเดียวกัน" }, 409);
+      return json({ error: "ห้องนี้ถูกจองไปแล้วในช่วงเวลาเดียวกัน" }, 409);
     }
     return json({ error: "booking failed" }, 500);
   }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ยูนิต &amp; รายงาน — Nawin Resort Khaokho</title>
+<title>ห้อง &amp; รายงาน — Nawin Resort Khaokho</title>
 <link rel="stylesheet" href="./assets/style.css" />
 </head>
 <body>
@@ -13,13 +13,13 @@
     <a href="./bookings.html">การจอง</a>
     <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
     <a href="./payments.html">ชำระเงิน</a>
-    <a href="./units.html" class="active">ยูนิต &amp; รายงาน</a>
+    <a href="./units.html" class="active">ห้อง &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
   </nav>
   <div class="content">
     <header>
-      <h1>ยูนิต &amp; รายงาน</h1>
-      <p>สรุปรายได้และ occupancy เดือนนี้ + แก้ไขข้อมูลยูนิต</p>
+      <h1>ห้อง &amp; รายงาน</h1>
+      <p>สรุปรายได้และ occupancy เดือนนี้ + แก้ไขข้อมูลห้อง</p>
     </header>
     <div id="msgBox"></div>
 
@@ -31,14 +31,14 @@
     <h3 class="section-heading">สรุปตามพนักงาน (สำหรับคิดคอมมิชชั่น) — เดือนนี้</h3>
     <div id="commissionWrap"><div class="empty">กำลังโหลด...</div></div>
 
-    <h3 class="section-heading">ยูนิตทั้งหมด</h3>
+    <h3 class="section-heading">ห้องทั้งหมด</h3>
     <div id="unitsTableWrap"><div class="empty">กำลังโหลด...</div></div>
 
     <div id="addUnitWrap" style="margin-top:20px;"></div>
 
-    <h3 class="section-heading">รูปภาพยูนิต</h3>
+    <h3 class="section-heading">รูปภาพห้อง</h3>
     <p style="color:var(--ink-soft); font-size:0.85rem; margin:-6px 0 12px;">
-      รูปที่อัปโหลดจะโชว์ให้ลูกค้าดูตอนเลือกยูนิตในหน้าจอง
+      รูปที่อัปโหลดจะโชว์ให้ลูกค้าดูตอนเลือกห้องในหน้าจอง
     </p>
     <div id="unitPhotosWrap"><div class="empty">กำลังโหลด...</div></div>
 
@@ -105,7 +105,7 @@
     kpiRow.innerHTML = `
       <div class="kpi"><div class="label">รายได้เดือนนี้</div><div class="value">${fmtBaht(revenue)}</div></div>
       <div class="kpi"><div class="label">Occupancy เดือนนี้</div><div class="value">${occupancy}%</div></div>
-      <div class="kpi"><div class="label">จำนวนยูนิต</div><div class="value">${units.length}</div></div>
+      <div class="kpi"><div class="label">จำนวนห้อง</div><div class="value">${units.length}</div></div>
       <div class="kpi"><div class="label">การจองที่นับ</div><div class="value">${(bookings || []).length}</div></div>
     `;
 
@@ -266,7 +266,7 @@
 
   function renderUnits(units) {
     if (!units.length) {
-      unitsTableWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
+      unitsTableWrap.innerHTML = `<div class="empty">ยังไม่มีห้อง</div>`;
       return;
     }
     const disabled = isOwner ? "" : "disabled";
@@ -291,7 +291,7 @@
         </tbody>
       </table>
       <p style="color:var(--ink-soft); font-size:0.82rem; margin-top:10px;">
-        ${isOwner ? "แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ" : "เฉพาะเจ้าของ (owner) เท่านั้นที่แก้ไขยูนิตได้"}
+        ${isOwner ? "แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ" : "เฉพาะเจ้าของ (owner) เท่านั้นที่แก้ไขห้องได้"}
       </p>
     `;
 
@@ -314,7 +314,7 @@
       return;
     }
     addUnitWrap.innerHTML = `
-      <h3 style="margin-bottom:10px;">เพิ่มยูนิตใหม่</h3>
+      <h3 style="margin-bottom:10px;">เพิ่มห้องใหม่</h3>
       <div class="row">
         <div class="field"><label>รหัส (unique)</label><input type="text" id="newCode" placeholder="เช่น HOUSE-3" /></div>
         <div class="field"><label>ชื่อ</label><input type="text" id="newName" placeholder="เช่น บ้านพัก 3" /></div>
@@ -331,7 +331,7 @@
         <div class="field"><label>ราคา/คืน (บาท)</label><input type="number" id="newPrice" min="0" step="1" value="1000" /></div>
         <div class="field"><label>ความจุ (คน)</label><input type="number" id="newCapacity" min="1" value="2" /></div>
       </div>
-      <button class="primary" id="addUnitBtn">เพิ่มยูนิต</button>
+      <button class="primary" id="addUnitBtn">เพิ่มห้อง</button>
     `;
     document.getElementById("addUnitBtn").addEventListener("click", addUnit);
   }
@@ -350,32 +350,32 @@
     btn.textContent = "กำลังเพิ่ม...";
     const { error } = await supabase.from("units").insert({ code, name, unit_type, base_price, capacity });
     btn.disabled = false;
-    btn.textContent = "เพิ่มยูนิต";
+    btn.textContent = "เพิ่มห้อง";
 
     if (error) {
-      showMsg(error.code === "23505" ? "รหัสยูนิตนี้มีอยู่แล้ว" : "เพิ่มยูนิตไม่สำเร็จ: " + error.message);
+      showMsg(error.code === "23505" ? "รหัสห้องนี้มีอยู่แล้ว" : "เพิ่มห้องไม่สำเร็จ: " + error.message);
       return;
     }
-    showMsg("เพิ่มยูนิตสำเร็จ", "success");
+    showMsg("เพิ่มห้องสำเร็จ", "success");
     await reload();
   }
 
   async function deleteUnit(btn) {
     const id = btn.dataset.deleteId;
     const code = btn.dataset.deleteCode;
-    if (!confirm(`ลบยูนิต "${code}" ถาวร? (ถ้ามีการจองอยู่จะลบไม่ได้ ให้ปิด "เปิดใช้งาน" แทน)`)) return;
+    if (!confirm(`ลบห้อง "${code}" ถาวร? (ถ้ามีการจองอยู่จะลบไม่ได้ ให้ปิด "เปิดใช้งาน" แทน)`)) return;
     btn.disabled = true;
     const { error } = await supabase.from("units").delete().eq("id", id);
     if (error) {
       showMsg(
         error.code === "23503"
-          ? "ลบไม่ได้เพราะมีการจองผูกกับยูนิตนี้อยู่ — ปิด \"เปิดใช้งาน\" แทนการลบ"
+          ? "ลบไม่ได้เพราะมีการจองผูกกับห้องนี้อยู่ — ปิด \"เปิดใช้งาน\" แทนการลบ"
           : "ลบไม่สำเร็จ: " + error.message,
       );
       btn.disabled = false;
       return;
     }
-    showMsg("ลบยูนิตแล้ว", "success");
+    showMsg("ลบห้องแล้ว", "success");
     await reload();
   }
 
@@ -394,7 +394,7 @@
       .select("id, code, name, unit_type, base_price, capacity, is_active, photo_urls")
       .order("code");
     if (error) {
-      unitsTableWrap.innerHTML = `<div class="msg error">โหลดยูนิตไม่สำเร็จ: ${error.message}</div>`;
+      unitsTableWrap.innerHTML = `<div class="msg error">โหลดห้องไม่สำเร็จ: ${error.message}</div>`;
       return;
     }
     currentUnits = units || [];
@@ -405,7 +405,7 @@
 
   function renderUnitPhotos(units) {
     if (!units.length) {
-      unitPhotosWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
+      unitPhotosWrap.innerHTML = `<div class="empty">ยังไม่มีห้อง</div>`;
       return;
     }
     unitPhotosWrap.innerHTML = units
