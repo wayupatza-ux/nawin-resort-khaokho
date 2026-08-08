@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>เข้าสู่ระบบ — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <h1>Nawin Resort Khaokho</h1>
+    <div class="sub">ระบบจัดการการจอง — สำหรับเจ้าของ/พนักงาน</div>
+    <div id="msgBox"></div>
+    <div class="field">
+      <label>อีเมล</label>
+      <input type="email" id="email" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>รหัสผ่าน</label>
+      <input type="password" id="password" autocomplete="current-password" />
+    </div>
+    <button class="primary" id="loginBtn" style="width:100%;">เข้าสู่ระบบ</button>
+  </div>
+</div>
+<script type="module">
+  import { supabase } from "./assets/app.js";
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
+  }
+
+  async function checkExisting() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) window.location.href = "./bookings.html";
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", async () => {
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    if (!email || !password) return showMsg("กรอกอีเมลและรหัสผ่าน");
+
+    const btn = document.getElementById("loginBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังเข้าสู่ระบบ...";
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    btn.disabled = false;
+    btn.textContent = "เข้าสู่ระบบ";
+
+    if (error) return showMsg("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+    window.location.href = "./bookings.html";
+  });
+
+  checkExisting();
+</script>
+</body>
+</html>

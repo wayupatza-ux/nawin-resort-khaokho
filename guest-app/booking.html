@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>จองที่พัก — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">จองที่พัก</div>
+    <div class="sub">Nawin Resort Khaokho — เขาค้อ</div>
+  </header>
+  <main id="main">
+    <div class="spinner"></div>
+  </main>
+  <nav class="bottom">
+    <a href="./booking.html" class="active">จองที่พัก</a>
+    <a href="./my-bookings.html">การจองของฉัน</a>
+  </nav>
+</div>
+<script type="module">
+  import { supabase, ensureLiff, getIdToken, callGuestApi, fmtBaht } from "./assets/app.js";
+
+  const main = document.getElementById("main");
+  let units = [];
+  let selectedUnitId = null;
+
+  function render() {
+    main.innerHTML = `
+      <div id="msgBox"></div>
+      <section class="card">
+        <h3>เลือกยูนิต</h3>
+        <div id="unitList"></div>
+      </section>
+      <section class="card">
+        <h3>วันที่เข้าพัก</h3>
+        <div class="row">
+          <div class="field">
+            <label>เช็คอิน</label>
+            <input type="date" id="checkIn" />
+          </div>
+          <div class="field">
+            <label>เช็คเอาท์</label>
+            <input type="date" id="checkOut" />
+          </div>
+        </div>
+        <div class="field">
+          <label>จำนวนผู้เข้าพัก</label>
+          <input type="number" id="numGuests" min="1" value="1" />
+        </div>
+        <div class="field">
+          <label>หมายเหตุ (ถ้ามี)</label>
+          <textarea id="notes" rows="2" placeholder="เช่น เวลาเดินทางถึงโดยประมาณ"></textarea>
+        </div>
+      </section>
+      <button class="primary" id="submitBtn">ยืนยันการจอง</button>
+    `;
+
+    const unitList = document.getElementById("unitList");
+    if (units.length === 0) {
+      unitList.innerHTML = `<div class="empty">ยังไม่มียูนิตเปิดให้จอง</div>`;
+    } else {
+      unitList.innerHTML = units
+        .map(
+          (u) => `
+        <div class="card unit-card" data-id="${u.id}" style="margin-bottom:8px;">
+          <div>
+            <div class="name">${u.name}</div>
+            <div class="meta">${typeLabel(u.unit_type)} · เข้าพักได้ ${u.capacity} คน</div>
+          </div>
+          <div class="price">${fmtBaht(u.base_price)}<div class="meta">/คืน</div></div>
+        </div>`,
+        )
+        .join("");
+
+      unitList.querySelectorAll(".unit-card").forEach((el) => {
+        el.addEventListener("click", () => {
+          selectedUnitId = el.dataset.id;
+          unitList.querySelectorAll(".unit-card").forEach((c) => c.classList.remove("selected"));
+          el.classList.add("selected");
+        });
+      });
+    }
+
+    document.getElementById("submitBtn").addEventListener("click", submitBooking);
+  }
+
+  function typeLabel(t) {
+    return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
+  }
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}" style="margin-bottom:12px;">${text}</div>`;
+  }
+
+  async function submitBooking() {
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    const numGuests = Number(document.getElementById("numGuests").value) || 1;
+    const notes = document.getElementById("notes").value;
+
+    if (!selectedUnitId) return showMsg("กรุณาเลือกยูนิตที่ต้องการจอง");
+    if (!checkIn || !checkOut) return showMsg("กรุณาเลือกวันเช็คอินและเช็คเอาท์");
+    if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
+
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังจอง...";
+
+    try {
+      const idToken = await getIdToken();
+      const { booking } = await callGuestApi("/book", {
+        idToken,
+        unitId: selectedUnitId,
+        checkIn,
+        checkOut,
+        numGuests,
+        notes,
+      });
+      showMsg(`จองสำเร็จ! เลขที่จอง ${booking.booking_ref} — ทางรีสอร์ทจะติดต่อยืนยันผ่าน LINE`, "success");
+      setTimeout(() => (window.location.href = "./my-bookings.html"), 1800);
+    } catch (e) {
+      showMsg(e.message || "จองไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "ยืนยันการจอง";
+    }
+  }
+
+  async function init() {
+    try {
+      await ensureLiff();
+      const { data, error } = await supabase
+        .from("units")
+        .select("id, code, name, unit_type, base_price, capacity")
+        .eq("is_active", true)
+        .order("unit_type");
+      if (error) throw error;
+      units = data || [];
+      render();
+    } catch (e) {
+      main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

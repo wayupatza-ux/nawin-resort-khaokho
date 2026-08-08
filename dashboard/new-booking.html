@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>เพิ่มการจอง — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
+    <a href="./bookings.html">การจอง</a>
+    <a href="./new-booking.html" class="active">เพิ่มการจอง (walk-in)</a>
+    <a href="./units.html">ยูนิต &amp; รายงาน</a>
+    <button class="logout" id="logoutBtn">ออกจากระบบ</button>
+  </nav>
+  <div class="content" style="max-width:560px;">
+    <header>
+      <h1>เพิ่มการจอง (walk-in)</h1>
+      <p>สำหรับแขก walk-in หรือจองทางโทรศัพท์</p>
+    </header>
+    <div id="msgBox"></div>
+    <form id="form">
+      <div class="row">
+        <div class="field">
+          <label>ชื่อแขก</label>
+          <input type="text" id="guestName" required />
+        </div>
+        <div class="field">
+          <label>เบอร์โทร</label>
+          <input type="tel" id="guestPhone" />
+        </div>
+      </div>
+      <div class="field">
+        <label>ยูนิต</label>
+        <select id="unitId" required></select>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>เช็คอิน</label>
+          <input type="date" id="checkIn" required />
+        </div>
+        <div class="field">
+          <label>เช็คเอาท์</label>
+          <input type="date" id="checkOut" required />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>จำนวนผู้เข้าพัก</label>
+          <input type="number" id="numGuests" min="1" value="1" />
+        </div>
+        <div class="field">
+          <label>ยอดรวม (บาท) — เว้นว่างเพื่อคำนวณอัตโนมัติ</label>
+          <input type="number" id="totalAmount" min="0" step="0.01" />
+        </div>
+      </div>
+      <div class="field">
+        <label>หมายเหตุ</label>
+        <textarea id="notes" rows="2"></textarea>
+      </div>
+      <button type="submit" class="primary" id="submitBtn">บันทึกการจอง</button>
+    </form>
+  </div>
+</div>
+<script type="module">
+  import { supabase, requireSession, logout } from "./assets/app.js";
+
+  let units = [];
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
+  }
+
+  function genBookingRef() {
+    const rand = crypto.randomUUID().split("-")[0].toUpperCase();
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    return `NRK-${date}-${rand}`;
+  }
+
+  async function loadUnits() {
+    const { data, error } = await supabase
+      .from("units")
+      .select("id, name, base_price")
+      .eq("is_active", true)
+      .order("name");
+    if (error) return showMsg("โหลดยูนิตไม่สำเร็จ: " + error.message);
+    units = data || [];
+    const sel = document.getElementById("unitId");
+    sel.innerHTML = units.map((u) => `<option value="${u.id}" data-price="${u.base_price}">${u.name} (${u.base_price} บาท/คืน)</option>`).join("");
+  }
+
+  async function getOrCreateGuest(name, phone) {
+    const { data: existing } = await supabase
+      .from("guests")
+      .select("id")
+      .eq("display_name", name)
+      .eq("phone", phone || "")
+      .maybeSingle();
+    if (existing) return existing.id;
+    const { data: created, error } = await supabase
+      .from("guests")
+      .insert({ display_name: name, phone: phone || null })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return created.id;
+  }
+
+  document.getElementById("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submitBtn");
+    const name = document.getElementById("guestName").value.trim();
+    const phone = document.getElementById("guestPhone").value.trim();
+    const unitId = document.getElementById("unitId").value;
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    const numGuests = Number(document.getElementById("numGuests").value) || 1;
+    const notes = document.getElementById("notes").value;
+    let totalAmount = document.getElementById("totalAmount").value;
+
+    if (!name || !unitId || !checkIn || !checkOut) return showMsg("กรอกข้อมูลให้ครบ");
+    if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
+
+    if (!totalAmount) {
+      const opt = document.querySelector(`#unitId option[value="${unitId}"]`);
+      const price = Number(opt?.dataset.price || 0);
+      const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
+      totalAmount = price * nights;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "กำลังบันทึก...";
+    try {
+      const { data: available, error: availErr } = await supabase.rpc("check_availability", {
+        p_unit_id: unitId,
+        p_check_in: checkIn,
+        p_check_out: checkOut,
+      });
+      if (availErr) throw availErr;
+      if (!available) throw new Error("ยูนิตนี้ไม่ว่างในช่วงวันที่เลือก");
+
+      const guestId = await getOrCreateGuest(name, phone);
+      const { error } = await supabase.from("bookings").insert({
+        booking_ref: genBookingRef(),
+        guest_id: guestId,
+        unit_id: unitId,
+        check_in: checkIn,
+        check_out: checkOut,
+        num_guests: numGuests,
+        total_amount: totalAmount,
+        source: "walk-in",
+        notes: notes || null,
+        status: "confirmed",
+      });
+      if (error) throw error;
+
+      showMsg("บันทึกการจองสำเร็จ", "success");
+      document.getElementById("form").reset();
+    } catch (e2) {
+      showMsg(e2.message || "บันทึกไม่สำเร็จ");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "บันทึกการจอง";
+    }
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+
+  async function init() {
+    const session = await requireSession();
+    if (!session) return;
+    await loadUnits();
+  }
+
+  init();
+</script>
+</body>
+</html>

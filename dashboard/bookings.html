@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>การจอง — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
+    <a href="./bookings.html" class="active">การจอง</a>
+    <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
+    <a href="./units.html">ยูนิต &amp; รายงาน</a>
+    <button class="logout" id="logoutBtn">ออกจากระบบ</button>
+  </nav>
+  <div class="content">
+    <header>
+      <h1>การจอง</h1>
+      <p>ดูและจัดการสถานะการจองทั้งหมด</p>
+    </header>
+    <div id="msgBox"></div>
+    <div class="toolbar">
+      <div class="field">
+        <label>สถานะ</label>
+        <select id="filterStatus">
+          <option value="">ทั้งหมด</option>
+          <option value="pending">รอยืนยัน</option>
+          <option value="confirmed">ยืนยันแล้ว</option>
+          <option value="checked_in">เช็คอินแล้ว</option>
+          <option value="checked_out">เช็คเอาท์แล้ว</option>
+          <option value="cancelled">ยกเลิกแล้ว</option>
+          <option value="no_show">ไม่มาเข้าพัก</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>จากวันที่ (เช็คอิน)</label>
+        <input type="date" id="filterFrom" />
+      </div>
+      <div class="field">
+        <label>ถึงวันที่ (เช็คอิน)</label>
+        <input type="date" id="filterTo" />
+      </div>
+      <button class="ghost" id="applyFilter">กรอง</button>
+    </div>
+    <div id="tableWrap"><div class="empty">กำลังโหลด...</div></div>
+  </div>
+</div>
+<script type="module">
+  import { supabase, requireSession, logout, fmtDate, fmtBaht, STATUS_TH } from "./assets/app.js";
+
+  const tableWrap = document.getElementById("tableWrap");
+  const STATUSES = ["pending", "confirmed", "checked_in", "checked_out", "cancelled", "no_show"];
+
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+  document.getElementById("applyFilter").addEventListener("click", load);
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
+    setTimeout(() => (document.getElementById("msgBox").innerHTML = ""), 3000);
+  }
+
+  async function load() {
+    tableWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
+    let query = supabase
+      .from("bookings")
+      .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, guests(display_name, phone), units(name)")
+      .order("check_in", { ascending: false })
+      .limit(200);
+
+    const status = document.getElementById("filterStatus").value;
+    const from = document.getElementById("filterFrom").value;
+    const to = document.getElementById("filterTo").value;
+    if (status) query = query.eq("status", status);
+    if (from) query = query.gte("check_in", from);
+    if (to) query = query.lte("check_in", to);
+
+    const { data, error } = await query;
+    if (error) {
+      tableWrap.innerHTML = `<div class="msg error">โหลดข้อมูลไม่สำเร็จ: ${error.message}</div>`;
+      return;
+    }
+    render(data || []);
+  }
+
+  function render(rows) {
+    if (!rows.length) {
+      tableWrap.innerHTML = `<div class="empty">ไม่พบการจอง</div>`;
+      return;
+    }
+    tableWrap.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>เลขที่จอง</th><th>ยูนิต</th><th>แขก</th><th>เช็คอิน</th><th>เช็คเอาท์</th>
+            <th>คน</th><th>ยอดเงิน</th><th>สถานะ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (b) => `
+            <tr>
+              <td>${b.booking_ref}</td>
+              <td>${b.units?.name ?? "-"}</td>
+              <td>${b.guests?.display_name ?? "-"}${b.guests?.phone ? " · " + b.guests.phone : ""}</td>
+              <td>${fmtDate(b.check_in)}</td>
+              <td>${fmtDate(b.check_out)}</td>
+              <td>${b.num_guests}</td>
+              <td>${fmtBaht(b.total_amount)}</td>
+              <td>
+                <select class="status-select" data-id="${b.id}" data-current="${b.status}">
+                  ${STATUSES.map((s) => `<option value="${s}" ${s === b.status ? "selected" : ""}>${STATUS_TH[s]}</option>`).join("")}
+                </select>
+              </td>
+            </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `;
+
+    tableWrap.querySelectorAll("select.status-select").forEach((sel) => {
+      sel.addEventListener("change", () => updateStatus(sel));
+    });
+  }
+
+  async function updateStatus(sel) {
+    const id = sel.dataset.id;
+    const newStatus = sel.value;
+    const prev = sel.dataset.current;
+    sel.disabled = true;
+    const { error } = await supabase.from("bookings").update({ status: newStatus }).eq("id", id);
+    sel.disabled = false;
+    if (error) {
+      showMsg("อัปเดตสถานะไม่สำเร็จ: " + error.message);
+      sel.value = prev;
+      return;
+    }
+    sel.dataset.current = newStatus;
+    showMsg("อัปเดตสถานะสำเร็จ", "success");
+  }
+
+  async function init() {
+    const session = await requireSession();
+    if (!session) return;
+    await load();
+  }
+
+  init();
+</script>
+</body>
+</html>

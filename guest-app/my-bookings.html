@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>การจองของฉัน — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">การจองของฉัน</div>
+    <div class="sub">Nawin Resort Khaokho — เขาค้อ</div>
+  </header>
+  <main id="main">
+    <div class="spinner"></div>
+  </main>
+  <nav class="bottom">
+    <a href="./booking.html">จองที่พัก</a>
+    <a href="./my-bookings.html" class="active">การจองของฉัน</a>
+  </nav>
+</div>
+<script type="module">
+  import { ensureLiff, getIdToken, callGuestApi, fmtDate, fmtBaht, STATUS_TH } from "./assets/app.js";
+
+  const main = document.getElementById("main");
+  let idToken = null;
+
+  function render(bookings) {
+    if (!bookings.length) {
+      main.innerHTML = `<div class="empty">ยังไม่มีการจอง</div>`;
+      return;
+    }
+    main.innerHTML = bookings
+      .map(
+        (b) => `
+      <div class="booking-item">
+        <div class="ref">เลขที่จอง ${b.booking_ref}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:6px 0;">
+          <strong>${b.units?.name ?? "-"}</strong>
+          <span class="status-pill status-${b.status}">${STATUS_TH[b.status] ?? b.status}</span>
+        </div>
+        <div class="meta" style="color:var(--ink-soft); font-size:0.85rem;">
+          ${fmtDate(b.check_in)} — ${fmtDate(b.check_out)} · ${b.num_guests} คน
+        </div>
+        <div style="margin-top:6px; font-weight:600; color:var(--clay-dark);">${fmtBaht(b.total_amount)}</div>
+        ${
+          ["pending", "confirmed"].includes(b.status)
+            ? `<button class="ghost" data-id="${b.id}" style="margin-top:10px;">ยกเลิกการจอง</button>`
+            : ""
+        }
+      </div>`,
+      )
+      .join("");
+
+    main.querySelectorAll("button[data-id]").forEach((btn) => {
+      btn.addEventListener("click", () => cancelBooking(btn.dataset.id, btn));
+    });
+  }
+
+  async function cancelBooking(bookingId, btn) {
+    if (!confirm("ยืนยันยกเลิกการจองนี้?")) return;
+    btn.disabled = true;
+    btn.textContent = "กำลังยกเลิก...";
+    try {
+      await callGuestApi("/cancel", { idToken, bookingId });
+      await load();
+    } catch (e) {
+      alert(e.message || "ยกเลิกไม่สำเร็จ");
+      btn.disabled = false;
+      btn.textContent = "ยกเลิกการจอง";
+    }
+  }
+
+  async function load() {
+    main.innerHTML = `<div class="spinner"></div>`;
+    const { bookings } = await callGuestApi("/my-bookings", { idToken });
+    render(bookings || []);
+  }
+
+  async function init() {
+    try {
+      await ensureLiff();
+      idToken = await getIdToken();
+      await load();
+    } catch (e) {
+      main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

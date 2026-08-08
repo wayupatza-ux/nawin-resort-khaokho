@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ยูนิต &amp; รายงาน — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
+    <a href="./bookings.html">การจอง</a>
+    <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
+    <a href="./units.html" class="active">ยูนิต &amp; รายงาน</a>
+    <button class="logout" id="logoutBtn">ออกจากระบบ</button>
+  </nav>
+  <div class="content">
+    <header>
+      <h1>ยูนิต &amp; รายงาน</h1>
+      <p>สรุปรายได้และ occupancy เดือนนี้ + แก้ไขข้อมูลยูนิต</p>
+    </header>
+    <div id="msgBox"></div>
+
+    <div class="kpi-row" id="kpiRow"></div>
+
+    <h3 style="margin-bottom:10px;">ยูนิตทั้งหมด</h3>
+    <div id="unitsTableWrap"><div class="empty">กำลังโหลด...</div></div>
+  </div>
+</div>
+<script type="module">
+  import { supabase, requireSession, logout, fmtBaht } from "./assets/app.js";
+
+  const kpiRow = document.getElementById("kpiRow");
+  const unitsTableWrap = document.getElementById("unitsTableWrap");
+
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
+    setTimeout(() => (document.getElementById("msgBox").innerHTML = ""), 3000);
+  }
+
+  function monthRange() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), daysInMonth: (end - start) / 86400000 };
+  }
+
+  async function loadReport(units) {
+    const { start, end, daysInMonth } = monthRange();
+    const { data: bookings, error } = await supabase
+      .from("bookings")
+      .select("unit_id, check_in, check_out, total_amount, status")
+      .in("status", ["confirmed", "checked_in", "checked_out"])
+      .lt("check_in", end)
+      .gt("check_out", start);
+
+    if (error) {
+      kpiRow.innerHTML = `<div class="msg error">โหลดรายงานไม่สำเร็จ: ${error.message}</div>`;
+      return;
+    }
+
+    let revenue = 0;
+    let bookedNights = 0;
+    for (const b of bookings || []) {
+      revenue += Number(b.total_amount) || 0;
+      const ci = new Date(Math.max(new Date(b.check_in), new Date(start)));
+      const co = new Date(Math.min(new Date(b.check_out), new Date(end)));
+      bookedNights += Math.max(0, (co - ci) / 86400000);
+    }
+    const totalUnitNights = (units.length || 1) * daysInMonth;
+    const occupancy = totalUnitNights ? Math.round((bookedNights / totalUnitNights) * 100) : 0;
+
+    kpiRow.innerHTML = `
+      <div class="kpi"><div class="label">รายได้เดือนนี้</div><div class="value">${fmtBaht(revenue)}</div></div>
+      <div class="kpi"><div class="label">Occupancy เดือนนี้</div><div class="value">${occupancy}%</div></div>
+      <div class="kpi"><div class="label">จำนวนยูนิต</div><div class="value">${units.length}</div></div>
+      <div class="kpi"><div class="label">การจองที่นับ</div><div class="value">${(bookings || []).length}</div></div>
+    `;
+  }
+
+  function typeLabel(t) {
+    return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
+  }
+
+  function renderUnits(units) {
+    if (!units.length) {
+      unitsTableWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
+      return;
+    }
+    unitsTableWrap.innerHTML = `
+      <table>
+        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ประเภท</th><th>ราคา/คืน</th><th>ความจุ</th><th>เปิดใช้งาน</th></tr></thead>
+        <tbody>
+          ${units
+            .map(
+              (u) => `
+            <tr>
+              <td>${u.code}</td>
+              <td><input type="text" data-field="name" data-id="${u.id}" value="${u.name}" style="width:140px;" /></td>
+              <td>${typeLabel(u.unit_type)}</td>
+              <td><input type="number" data-field="base_price" data-id="${u.id}" value="${u.base_price}" style="width:100px;" /></td>
+              <td><input type="number" data-field="capacity" data-id="${u.id}" value="${u.capacity}" style="width:70px;" /></td>
+              <td><input type="checkbox" data-field="is_active" data-id="${u.id}" ${u.is_active ? "checked" : ""} /></td>
+            </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <p style="color:var(--ink-soft); font-size:0.82rem; margin-top:10px;">แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ</p>
+    `;
+
+    unitsTableWrap.querySelectorAll("input[data-field]").forEach((input) => {
+      const handler = () => saveUnitField(input);
+      input.addEventListener("change", handler);
+      if (input.type === "text" || input.type === "number") {
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+      }
+    });
+  }
+
+  async function saveUnitField(input) {
+    const id = input.dataset.id;
+    const field = input.dataset.field;
+    const value = input.type === "checkbox" ? input.checked : input.value;
+    const { error } = await supabase.from("units").update({ [field]: value }).eq("id", id);
+    if (error) showMsg("บันทึกไม่สำเร็จ: " + error.message);
+    else showMsg("บันทึกแล้ว", "success");
+  }
+
+  async function init() {
+    const session = await requireSession();
+    if (!session) return;
+
+    const { data: units, error } = await supabase
+      .from("units")
+      .select("id, code, name, unit_type, base_price, capacity, is_active")
+      .order("code");
+    if (error) {
+      unitsTableWrap.innerHTML = `<div class="msg error">โหลดยูนิตไม่สำเร็จ: ${error.message}</div>`;
+      return;
+    }
+    renderUnits(units || []);
+    await loadReport(units || []);
+  }
+
+  init();
+</script>
+</body>
+</html>

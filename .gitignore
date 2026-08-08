@@ -1,0 +1,11 @@
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# logs
+*.log
