@@ -31,6 +31,12 @@
     <div id="unitsTableWrap"><div class="empty">กำลังโหลด...</div></div>
 
     <div id="addUnitWrap" style="margin-top:20px;"></div>
+
+    <h3 class="section-heading">พนักงาน (ผูกบัญชี LINE สำหรับคีย์จองผ่าน LIFF)</h3>
+    <p style="color:var(--ink-soft); font-size:0.85rem; margin:-6px 0 12px;">
+      ให้พนักงานเปิดเว็บ "จองแทนลูกค้า" ผ่าน LINE ครั้งแรก จะโชว์ LINE User ID ของเขาไว้ให้คัดลอกมาวางที่นี่
+    </p>
+    <div id="staffWrap"><div class="empty">กำลังโหลด...</div></div>
   </div>
 </div>
 <script type="module">
@@ -40,6 +46,7 @@
   const commissionWrap = document.getElementById("commissionWrap");
   const unitsTableWrap = document.getElementById("unitsTableWrap");
   const addUnitWrap = document.getElementById("addUnitWrap");
+  const staffWrap = document.getElementById("staffWrap");
   let isOwner = false;
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
@@ -131,6 +138,56 @@
     const div = document.createElement("div");
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  async function loadStaff() {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, display_name, role, line_user_id")
+      .order("display_name");
+    if (error) {
+      staffWrap.innerHTML = `<div class="msg error">โหลดพนักงานไม่สำเร็จ: ${error.message}</div>`;
+      return;
+    }
+    renderStaff(data || []);
+  }
+
+  const ROLE_TH = { owner: "เจ้าของ", manager: "ผู้จัดการ", staff: "พนักงาน" };
+
+  function renderStaff(profiles) {
+    if (!profiles.length) {
+      staffWrap.innerHTML = `<div class="empty">ยังไม่มีพนักงานในระบบ</div>`;
+      return;
+    }
+    staffWrap.innerHTML = `
+      <table>
+        <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>LINE User ID</th></tr></thead>
+        <tbody>
+          ${profiles
+            .map(
+              (p) => `
+            <tr>
+              <td>${escapeHtml(p.display_name || "-")}</td>
+              <td>${ROLE_TH[p.role] || p.role}</td>
+              <td><input type="text" data-staff-id="${p.id}" value="${escapeHtml(p.line_user_id || "")}" placeholder="วาง LINE User ID ที่นี่" style="width:260px; font-family:monospace; font-size:0.82rem;" /></td>
+            </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `;
+    staffWrap.querySelectorAll("input[data-staff-id]").forEach((input) => {
+      input.addEventListener("change", () => saveStaffLineId(input));
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+    });
+  }
+
+  async function saveStaffLineId(input) {
+    const id = input.dataset.staffId;
+    const value = input.value.trim() || null;
+    const { error } = await supabase.from("profiles").update({ line_user_id: value }).eq("id", id);
+    if (error) showMsg(error.code === "23505" ? "LINE User ID นี้ผูกกับพนักงานคนอื่นอยู่แล้ว" : "บันทึกไม่สำเร็จ: " + error.message);
+    else showMsg("ผูกบัญชี LINE สำเร็จ", "success");
   }
 
   function typeLabel(t) {
@@ -294,7 +351,7 @@
     isOwner = true;
 
     renderAddForm();
-    await reload();
+    await Promise.all([reload(), loadStaff()]);
   }
 
   init();

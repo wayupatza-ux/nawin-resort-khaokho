@@ -14,23 +14,29 @@
 - ✅ Edge functions deploy แล้ว 3 ตัว: `guest-api`, `line-webhook`, `line-notify` (ทดสอบ auth guard ผ่าน: ไม่มี idToken → 400, signature ผิด → 401, internal secret ผิด → 401)
 - ✅ Seed ยูนิตเริ่มต้น 3 รายการ (บ้านพัก 1, บ้านพัก 2, เต็นท์กระโจม) — **ราคา/ชื่อเป็น placeholder ต้องแก้**
 - ✅ `guest-app/` ครบ 3 หน้า: `index.html` (LIFF login), `booking.html` (เลือกยูนิต+วันที่+จอง), `my-bookings.html` (ดู/ยกเลิกการจอง)
-- ✅ `dashboard/` ครบ 4 หน้า: `index.html` (login), `bookings.html` (ดู/กรอง/เปลี่ยนสถานะ), `new-booking.html` (walk-in), `units.html` (แก้ไขยูนิต + KPI รายได้/occupancy เดือนปัจจุบัน)
-- ⏳ ยังไม่ push ขึ้น GitHub (จะ push ทันทีหลังไฟล์นี้)
+- ✅ `staff-app/` ใหม่ — `index.html` (LIFF login + เช็คว่าผูกบัญชีหรือยัง), `booking.html` (พนักงานคีย์จองแทนลูกค้า พร้อมราคาอัตโนมัติ+ปรับได้) — ใช้ edge function `staff-api` แยกจาก `guest-api`
+- ✅ `dashboard/` ครบ 4 หน้า: `index.html` (login), `bookings.html` (ปฏิทินรายเดือน + รายการจอง + ค้นหา + filter "จองโดย"), `new-booking.html` (walk-in, ราคาปรับได้), `units.html` (owner เท่านั้น — แก้ไขยูนิต, KPI รายได้/occupancy, สรุปคอมมิชชั่นรายพนักงาน, ผูกบัญชี LINE พนักงาน)
+- ✅ Role 3 ระดับ: `owner` (เห็นทุกอย่าง) / `manager` / `staff` (เห็นแค่การจอง+เพิ่มการจอง ไม่เห็นยูนิต/รายงาน)
+- ✅ ทุกการจอง (walk-in จาก Dashboard หรือ staff-app) บันทึก `created_by` อัตโนมัติ ใช้คิดคอมมิชชั่นได้
+- ✅ Custom domain `khaokho.nawingroup.com` ตั้งค่าแล้ว (DNS ชี้แล้ว รอ GitHub ออก SSL cert)
+- ✅ Push ขึ้น GitHub แล้ว, deploy ผ่าน GitHub Pages
 
 ## สิ่งที่บอสตองต้องทำเอง (บล็อกไม่ได้ เพราะต้องเป็นเจ้าของบัญชี)
 
 ### 1. แก้ข้อมูลยูนิตให้ตรงจริง
 เข้า dashboard → หน้า "ยูนิต & รายงาน" แก้ชื่อ/ราคา/ความจุยูนิตทั้ง 3 (ตอนนี้เป็น placeholder: บ้านพัก 1500 บาท, เต็นท์ 500 บาท) ถ้ามียูนิตมากกว่านี้ เพิ่มแถวใหม่ผ่าน SQL editor ใน Supabase dashboard ก่อน (`insert into units (...)`) แล้วจะโผล่ในหน้าจัดการอัตโนมัติ
 
-### 2. สร้าง LINE Official Account + LINE Login channel + LIFF app ใหม่
-ทำแยกจากของโรงแรมดอนเมืองโดยสิ้นเชิง (คนละ OA คนละ LIFF ID):
+### 2. สร้าง LINE Official Account + LINE Login channel + LIFF app **2 ตัว** (แขก + พนักงาน)
+ทำแยกจากของโรงแรมดอนเมืองโดยสิ้นเชิง (คนละ OA คนละ LIFF ID) — ตอนนี้มี frontend 2 เว็บที่ต้องใช้ LIFF: `guest-app/` (แขกจองเอง) และ `staff-app/` (พนักงานคีย์จองแทนลูกค้า) **ทั้งคู่ใช้ LINE Login channel เดียวกันได้** (แค่สร้าง LIFF entry เพิ่มอันที่ 2 ในแท็บ LIFF) เพราะ token verification เช็คแค่ channel ID ตรงกัน:
 
 1. เข้า [LINE Developers Console](https://developers.line.biz/console/) → สร้าง Provider ใหม่หรือใช้ของเดิม → สร้าง **Messaging API channel** ใหม่ ตั้งชื่อ "Nawin Resort Khaokho"
    - ไปที่แท็บ "Messaging API" → คัดลอก **Channel secret** และออก **Channel access token (long-lived)**
-2. ในเดียวกัน (provider เดียวกัน) สร้าง **LINE Login channel** ใหม่
-   - เปิดใช้ LIFF: ไปแท็บ "LIFF" → Add → ตั้งชื่อ "จองที่พัก", Size: Full, Endpoint URL: `https://khaokho.nawingroup.com/guest-app/index.html`
-   - คัดลอก **LIFF ID** ที่ได้
-   - คัดลอก **Channel ID** ของ LINE Login channel นี้ด้วย (ใช้ verify ID token)
+2. ในเดียวกัน (provider เดียวกัน) สร้าง **LINE Login channel** ใหม่ 1 ตัว
+   - เปิดใช้ LIFF: ไปแท็บ "LIFF" → Add **2 รายการ**:
+     - **"จองที่พัก"** (สำหรับแขก) — Size: Full, Endpoint URL: `https://khaokho.nawingroup.com/guest-app/index.html`
+     - **"จองแทนลูกค้า"** (สำหรับพนักงาน) — Size: Full, Endpoint URL: `https://khaokho.nawingroup.com/staff-app/index.html`
+   - คัดลอก **LIFF ID ทั้ง 2 ตัว** ที่ได้ (คนละค่ากัน)
+   - คัดลอก **Channel ID** ของ LINE Login channel นี้ด้วย (ใช้ verify ID token — ใช้ค่าเดียวกันทั้ง 2 แอป)
 3. อัปเดตค่าจริงลง Supabase Vault (รัน SQL ใน Supabase SQL editor ของ project `nawin-resort-khaokho`):
    ```sql
    select vault.update_secret(
@@ -46,8 +52,21 @@
      '<LOGIN_CHANNEL_ID_จริง>'
    );
    ```
-4. แก้ `guest-app/assets/config.js` บรรทัด `LIFF_ID: "REPLACE_ME_LIFF_ID"` เป็น LIFF ID จริง แล้ว push/deploy ใหม่
+4. แก้ 2 ไฟล์ (คนละ LIFF ID กัน) แล้ว push/deploy ใหม่:
+   - `guest-app/assets/config.js` → `LIFF_ID: "REPLACE_ME_LIFF_ID"` → ใส่ LIFF ID ของ "จองที่พัก"
+   - `staff-app/assets/config.js` → `LIFF_ID: "REPLACE_ME_STAFF_LIFF_ID"` → ใส่ LIFF ID ของ "จองแทนลูกค้า"
 5. ตั้ง Webhook URL ใน Messaging API channel: `https://espxwmnaoauhsdgckwpr.supabase.co/functions/v1/line-webhook` และเปิด "Use webhook"
+
+### 2c. ผูกบัญชี LINE ของพนักงานแต่ละคน (สำหรับ `staff-app`)
+`staff-app` ไม่มีหน้า login แยก — ระบุตัวพนักงานจาก LINE account ที่ผูกไว้ในตาราง `profiles` โดยตรง ขั้นตอน:
+
+1. ให้พนักงานเปิด `https://khaokho.nawingroup.com/staff-app/` ผ่าน LINE (ใน LINE app จริง ไม่ใช่เบราว์เซอร์ปกติ — ต้องเปิดจากลิงก์ที่ส่งผ่านแชท LINE หรือปุ่มเมนู richmenu ของ OA)
+2. รอบแรกจะขึ้นข้อความ "บัญชี LINE นี้ยังไม่ได้ผูกกับพนักงาน" พร้อม **LINE User ID** ให้คัดลอก
+3. ให้พนักงานส่ง LINE User ID นั้นมาให้บอสตอง (หรือแคปหน้าจอ)
+4. เข้า Dashboard → **ยูนิต & รายงาน** → เลื่อนลงหา **"พนักงาน (ผูกบัญชี LINE)"** → วาง LINE User ID ลงช่องของพนักงานคนนั้น → กด Enter หรือคลิกออกจากช่อง (บันทึกอัตโนมัติ)
+5. ให้พนักงานเปิด `staff-app` ใหม่อีกครั้ง — คราวนี้จะเข้าหน้ากรอกจองได้เลย ไม่ต้อง login ซ้ำอีก
+
+ทุกการจองที่พนักงานคีย์ผ่าน `staff-app` จะถูกบันทึก "จองโดย" อัตโนมัติ (เห็นในหน้า "การจอง" + นับรวมในตาราง "สรุปตามพนักงาน (สำหรับคิดคอมมิชชั่น)" ที่หน้า "ยูนิต & รายงาน" เหมือนการจองที่คีย์ผ่าน Dashboard ทุกประการ)
 
 ### 2b. ตรวจสอบ internal_functions_secret
 มีการสุ่มค่าไว้แล้วตอน setup (SECURITY DEFINER trigger ↔ `line-notify` function ใช้ยืนยันกัน) — เป็นค่าที่ตั้งไว้ใน Vault ของ project แล้ว ไม่ต้องแก้อะไรเพิ่ม เว้นแต่ต้องการหมุนค่าใหม่ (rotate) ก็ทำผ่าน `vault.update_secret` เหมือนข้างบน แล้วอย่าลืมว่าไม่มีที่อื่นอ้างอิงค่านี้นอกจาก DB trigger เอง

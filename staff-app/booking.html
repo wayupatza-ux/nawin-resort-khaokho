@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>เพิ่มการจอง — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">เพิ่มการจอง</div>
+    <div class="sub" id="staffLabel">Nawin Resort Khaokho</div>
+  </header>
+  <main id="main">
+    <div class="spinner"></div>
+  </main>
+</div>
+<script type="module">
+  import { supabase, ensureLiff, getIdToken, callStaffApi, fmtBaht } from "./assets/app.js";
+
+  const main = document.getElementById("main");
+  let units = [];
+  let idToken = null;
+  let totalTouchedByUser = false;
+
+  function typeLabel(t) {
+    return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
+  }
+
+  function render() {
+    main.innerHTML = `
+      <div id="msgBox"></div>
+      <section class="card">
+        <h3>ยูนิต</h3>
+        <select id="unitId">
+          ${units.map((u) => `<option value="${u.id}" data-price="${u.base_price}">${u.name} (${fmtBaht(u.base_price)}/คืน)</option>`).join("")}
+        </select>
+      </section>
+      <section class="card">
+        <h3>ข้อมูลลูกค้า</h3>
+        <div class="field"><label>ชื่อแขก</label><input type="text" id="guestName" /></div>
+        <div class="field"><label>เบอร์โทร</label><input type="tel" id="guestPhone" /></div>
+      </section>
+      <section class="card">
+        <h3>วันที่เข้าพัก</h3>
+        <div class="row">
+          <div class="field"><label>เช็คอิน</label><input type="date" id="checkIn" /></div>
+          <div class="field"><label>เช็คเอาท์</label><input type="date" id="checkOut" /></div>
+        </div>
+        <div class="field"><label>จำนวนผู้เข้าพัก</label><input type="number" id="numGuests" min="1" value="1" /></div>
+        <div class="field">
+          <label>ยอดรวม (บาท)</label>
+          <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกยูนิต+วันที่ก่อน" />
+          <div id="priceHint" style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;"></div>
+        </div>
+        <div class="field"><label>หมายเหตุ</label><textarea id="notes" rows="2" placeholder="เช่น เหตุผลที่ปรับราคา"></textarea></div>
+      </section>
+      <button class="primary" id="submitBtn">บันทึกการจอง</button>
+    `;
+
+    document.getElementById("unitId").addEventListener("change", recalcPrice);
+    document.getElementById("checkIn").addEventListener("change", recalcPrice);
+    document.getElementById("checkOut").addEventListener("change", recalcPrice);
+    document.getElementById("totalAmount").addEventListener("input", () => {
+      totalTouchedByUser = true;
+      recalcPrice();
+    });
+    document.getElementById("submitBtn").addEventListener("click", submitBooking);
+    recalcPrice();
+  }
+
+  function computeStandardPrice() {
+    const unitId = document.getElementById("unitId").value;
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    const opt = document.querySelector(`#unitId option[value="${unitId}"]`);
+    const price = Number(opt?.dataset.price || 0);
+    if (!unitId || !checkIn || !checkOut || checkOut <= checkIn) return null;
+    const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
+    return { price, nights, total: price * nights };
+  }
+
+  function recalcPrice() {
+    const calc = computeStandardPrice();
+    const hint = document.getElementById("priceHint");
+    const totalInput = document.getElementById("totalAmount");
+    if (!calc) {
+      hint.textContent = "";
+      return;
+    }
+    const resetLink = totalTouchedByUser
+      ? ` · <a href="#" id="resetPriceLink" style="color:var(--clay-dark);">ใช้ราคาปกติ</a>`
+      : "";
+    hint.innerHTML = `ราคาปกติ ${fmtBaht(calc.price)} x ${calc.nights} คืน = <strong>${fmtBaht(calc.total)}</strong>${resetLink}`;
+    const resetEl = document.getElementById("resetPriceLink");
+    if (resetEl) {
+      resetEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        totalTouchedByUser = false;
+        totalInput.value = calc.total;
+        recalcPrice();
+      });
+    }
+    if (!totalTouchedByUser) totalInput.value = calc.total;
+  }
+
+  function showMsg(text, kind = "error") {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}" style="margin-bottom:12px;">${text}</div>`;
+  }
+
+  async function submitBooking() {
+    const unitId = document.getElementById("unitId").value;
+    const guestName = document.getElementById("guestName").value.trim();
+    const guestPhone = document.getElementById("guestPhone").value.trim();
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    const numGuests = Number(document.getElementById("numGuests").value) || 1;
+    const notes = document.getElementById("notes").value;
+    let totalAmount = document.getElementById("totalAmount").value;
+
+    if (!guestName) return showMsg("กรอกชื่อแขก");
+    if (!checkIn || !checkOut) return showMsg("กรุณาเลือกวันเช็คอินและเช็คเอาท์");
+    if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
+
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังบันทึก...";
+    try {
+      const { booking } = await callStaffApi("/book", {
+        idToken,
+        unitId,
+        checkIn,
+        checkOut,
+        numGuests,
+        guestName,
+        guestPhone,
+        notes,
+        totalAmount: totalAmount || undefined,
+      });
+      showMsg(`บันทึกสำเร็จ! เลขที่จอง ${booking.booking_ref}`, "success");
+      document.getElementById("guestName").value = "";
+      document.getElementById("guestPhone").value = "";
+      document.getElementById("notes").value = "";
+      totalTouchedByUser = false;
+      recalcPrice();
+    } catch (e) {
+      showMsg(e.message || "บันทึกไม่สำเร็จ");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "บันทึกการจอง";
+    }
+  }
+
+  async function init() {
+    try {
+      await ensureLiff();
+      idToken = await getIdToken();
+      const { profile } = await callStaffApi("/me", { idToken });
+      document.getElementById("staffLabel").textContent = `Nawin Resort Khaokho — ${profile.displayName}`;
+
+      const { data, error } = await supabase
+        .from("units")
+        .select("id, name, unit_type, base_price")
+        .eq("is_active", true)
+        .order("unit_type");
+      if (error) throw error;
+      units = data || [];
+      render();
+    } catch (e) {
+      main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

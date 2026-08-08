@@ -13,13 +13,15 @@ supabase/
   migrations/        DB schema, RLS, functions (SQL)
   functions/
     guest-api/        booking / my-bookings / cancel — เรียกจาก guest-app
+    staff-api/          booking (walk-in) — เรียกจาก staff-app, ระบุตัวพนักงานจาก LINE
     line-webhook/      รับ webhook จาก LINE Messaging API
     line-notify/        ส่ง LINE push แจ้งเตือนเมื่อจองยืนยันแล้ว
 guest-app/            หน้าเว็บสำหรับแขก (เปิดผ่าน LIFF ใน LINE)
+staff-app/             หน้าเว็บสำหรับพนักงานคีย์จองแทนลูกค้า (เปิดผ่าน LIFF ใน LINE)
 dashboard/             หน้าเว็บสำหรับเจ้าของ/พนักงาน (login ด้วย Supabase Auth)
 ```
 
-ทั้ง `guest-app/` และ `dashboard/` เป็น static HTML/JS ล้วน ไม่มี build step —
+ทั้งหมดเป็น static HTML/JS ล้วน ไม่มี build step —
 เปิดไฟล์ตรงๆ ผ่าน web server ใดก็ได้ (GitHub Pages, Netlify, ฯลฯ)
 
 ## Supabase project

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>จองแทนลูกค้า — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">Nawin Resort Khaokho</div>
+    <div class="sub">ระบบคีย์จองสำหรับพนักงาน</div>
+  </header>
+  <main>
+    <div id="status" class="msg info">กำลังเชื่อมต่อ LINE...</div>
+    <div id="loading" class="spinner"></div>
+    <div id="linkBox" style="display:none;"></div>
+  </main>
+</div>
+<script type="module">
+  import { ensureLiff, getIdToken, callStaffApi } from "./assets/app.js";
+
+  const statusEl = document.getElementById("status");
+  const loadingEl = document.getElementById("loading");
+  const linkBox = document.getElementById("linkBox");
+
+  async function init() {
+    try {
+      await ensureLiff();
+      const idToken = await getIdToken();
+      await callStaffApi("/me", { idToken });
+      window.location.href = "./booking.html";
+    } catch (e) {
+      loadingEl.style.display = "none";
+      if (e.status === 403 && e.lineUserId) {
+        statusEl.className = "msg error";
+        statusEl.textContent = e.message;
+        linkBox.style.display = "block";
+        linkBox.innerHTML = `
+          <div class="card" style="margin-top:12px;">
+            <p style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:8px;">
+              ส่ง LINE User ID นี้ให้เจ้าของ เพื่อผูกบัญชีในหน้า Dashboard → ยูนิต &amp; รายงาน → พนักงาน
+            </p>
+            <div style="font-family:monospace; font-size:0.8rem; background:var(--cream); padding:10px; border-radius:8px; word-break:break-all;">${e.lineUserId}</div>
+          </div>
+        `;
+      } else {
+        statusEl.className = "msg error";
+        statusEl.textContent = e.message || "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่";
+      }
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
