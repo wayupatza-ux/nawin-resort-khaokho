@@ -24,7 +24,10 @@
 
     <div class="kpi-row" id="kpiRow"></div>
 
-    <h3 style="margin-bottom:10px;">ยูนิตทั้งหมด</h3>
+    <h3 class="section-heading">สรุปตามพนักงาน (สำหรับคิดคอมมิชชั่น) — เดือนนี้</h3>
+    <div id="commissionWrap"><div class="empty">กำลังโหลด...</div></div>
+
+    <h3 class="section-heading">ยูนิตทั้งหมด</h3>
     <div id="unitsTableWrap"><div class="empty">กำลังโหลด...</div></div>
 
     <div id="addUnitWrap" style="margin-top:20px;"></div>
@@ -34,6 +37,7 @@
   import { supabase, requireSession, logout, fmtBaht } from "./assets/app.js";
 
   const kpiRow = document.getElementById("kpiRow");
+  const commissionWrap = document.getElementById("commissionWrap");
   const unitsTableWrap = document.getElementById("unitsTableWrap");
   const addUnitWrap = document.getElementById("addUnitWrap");
   let isOwner = false;
@@ -56,13 +60,14 @@
     const { start, end, daysInMonth } = monthRange();
     const { data: bookings, error } = await supabase
       .from("bookings")
-      .select("unit_id, check_in, check_out, total_amount, status")
+      .select("unit_id, check_in, check_out, total_amount, status, created_by, creator:profiles!bookings_created_by_fkey(display_name)")
       .in("status", ["confirmed", "checked_in", "checked_out"])
       .lt("check_in", end)
       .gt("check_out", start);
 
     if (error) {
       kpiRow.innerHTML = `<div class="msg error">โหลดรายงานไม่สำเร็จ: ${error.message}</div>`;
+      commissionWrap.innerHTML = "";
       return;
     }
 
@@ -83,6 +88,49 @@
       <div class="kpi"><div class="label">จำนวนยูนิต</div><div class="value">${units.length}</div></div>
       <div class="kpi"><div class="label">การจองที่นับ</div><div class="value">${(bookings || []).length}</div></div>
     `;
+
+    renderCommission(bookings || []);
+  }
+
+  function renderCommission(bookings) {
+    // Only bookings a staff member actually created (walk-in) count toward
+    // commission — LIFF self-bookings have created_by = null and are
+    // excluded on purpose (no staff involved, nothing to pay commission on).
+    const staffBookings = bookings.filter((b) => b.created_by);
+    if (!staffBookings.length) {
+      commissionWrap.innerHTML = `<div class="empty">ยังไม่มีการจองที่พนักงานเป็นคนบันทึกเดือนนี้</div>`;
+      return;
+    }
+
+    const byStaff = new Map();
+    for (const b of staffBookings) {
+      const key = b.created_by;
+      const name = b.creator?.display_name || "(ไม่ทราบชื่อ)";
+      if (!byStaff.has(key)) byStaff.set(key, { name, count: 0, revenue: 0 });
+      const entry = byStaff.get(key);
+      entry.count += 1;
+      entry.revenue += Number(b.total_amount) || 0;
+    }
+
+    const rows = [...byStaff.values()].sort((a, b) => b.revenue - a.revenue);
+    commissionWrap.innerHTML = `
+      <table>
+        <thead><tr><th>พนักงาน</th><th>จำนวนการจอง</th><th>ยอดรวม</th></tr></thead>
+        <tbody>
+          ${rows
+            .map(
+              (r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.count}</td><td>${fmtBaht(r.revenue)}</td></tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
   }
 
   function typeLabel(t) {

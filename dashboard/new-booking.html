@@ -70,6 +70,7 @@
 
   let units = [];
   let totalTouchedByUser = false;
+  let currentSession = null;
 
   function showMsg(text, kind = "error") {
     document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
@@ -202,6 +203,7 @@
         source: "walk-in",
         notes: notes || null,
         status: "confirmed",
+        created_by: currentSession?.user?.id ?? null,
       });
       if (error) throw error;
 
@@ -242,6 +244,7 @@
   async function init() {
     const session = await requireSession();
     if (!session) return;
+    currentSession = session;
     await gateOwnerOnlyNav(session);
     await loadUnits();
     applyPrefillFromUrl();

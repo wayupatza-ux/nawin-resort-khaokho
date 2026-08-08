@@ -65,6 +65,12 @@
         <label>ถึงวันที่ (เช็คอิน)</label>
         <input type="date" id="filterTo" />
       </div>
+      <div class="field">
+        <label>จองโดย</label>
+        <select id="filterCreatedBy">
+          <option value="">ทั้งหมด</option>
+        </select>
+      </div>
       <button class="ghost" id="applyFilter">กรอง</button>
     </div>
     <div id="tableWrap"><div class="empty">กำลังโหลด...</div></div>
@@ -198,20 +204,33 @@
 
   // ---------- Booking list ----------
 
+  async function loadCreatedByOptions() {
+    const sel = document.getElementById("filterCreatedBy");
+    const { data, error } = await supabase.from("profiles").select("id, display_name, role").order("display_name");
+    if (error || !data) return;
+    const options = data
+      .map((p) => `<option value="${p.id}">${escapeHtml(p.display_name || p.role)}</option>`)
+      .join("");
+    sel.innerHTML = `<option value="">ทั้งหมด</option><option value="__self__">แขกจองเอง (LINE)</option>${options}`;
+  }
+
   async function loadList() {
     tableWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     let query = supabase
       .from("bookings")
-      .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, guests(display_name, phone), units(name)")
+      .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, guests(display_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)")
       .order("check_in", { ascending: false })
       .limit(200);
 
     const status = document.getElementById("filterStatus").value;
     const from = document.getElementById("filterFrom").value;
     const to = document.getElementById("filterTo").value;
+    const createdBy = document.getElementById("filterCreatedBy").value;
     if (status) query = query.eq("status", status);
     if (from) query = query.gte("check_in", from);
     if (to) query = query.lte("check_in", to);
+    if (createdBy === "__self__") query = query.is("created_by", null);
+    else if (createdBy) query = query.eq("created_by", createdBy);
 
     const { data, error } = await query;
     if (error) {
@@ -244,7 +263,7 @@
         <thead>
           <tr>
             <th>เลขที่จอง</th><th>ยูนิต</th><th>แขก</th><th>เช็คอิน</th><th>เช็คเอาท์</th>
-            <th>คน</th><th>ยอดเงิน</th><th>สถานะ</th>
+            <th>คน</th><th>ยอดเงิน</th><th>จองโดย</th><th>สถานะ</th>
           </tr>
         </thead>
         <tbody>
@@ -259,6 +278,7 @@
               <td>${fmtDate(b.check_out)}</td>
               <td>${b.num_guests}</td>
               <td>${fmtBaht(b.total_amount)}</td>
+              <td>${escapeHtml(b.creator?.display_name ?? "แขกจองเอง (LINE)")}</td>
               <td>
                 <select class="status-select" data-id="${b.id}" data-current="${b.status}">
                   ${STATUSES.map((s) => `<option value="${s}" ${s === b.status ? "selected" : ""}>${STATUS_TH[s]}</option>`).join("")}
@@ -298,6 +318,7 @@
     const session = await requireSession();
     if (!session) return;
     await gateOwnerOnlyNav(session);
+    await loadCreatedByOptions();
     await Promise.all([loadCalendar(), loadList()]);
   }
 
