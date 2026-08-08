@@ -11,6 +11,7 @@
   <nav class="side">
     <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
     <a href="./bookings.html">การจอง</a>
+    <a href="./calendar.html">ปฏิทินการจอง</a>
     <a href="./new-booking.html" class="active">เพิ่มการจอง (walk-in)</a>
     <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
@@ -227,11 +228,24 @@
     recalcPrice();
   });
 
+  function applyPrefillFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const unitId = params.get("unit");
+    const checkin = params.get("checkin");
+    if (unitId && document.querySelector(`#unitId option[value="${unitId}"]`)) {
+      document.getElementById("unitId").value = unitId;
+    }
+    if (checkin) {
+      document.getElementById("checkIn").value = checkin;
+    }
+  }
+
   async function init() {
     const session = await requireSession();
     if (!session) return;
     await gateOwnerOnlyNav(session);
     await loadUnits();
+    applyPrefillFromUrl();
     recalcPrice();
   }
 

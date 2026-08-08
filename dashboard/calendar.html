@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ปฏิทินการจอง — Nawin Resort Khaokho</title>
+<link rel="stylesheet" href="./assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
+    <a href="./bookings.html">การจอง</a>
+    <a href="./calendar.html" class="active">ปฏิทินการจอง</a>
+    <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
+    <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
+    <button class="logout" id="logoutBtn">ออกจากระบบ</button>
+  </nav>
+  <div class="content">
+    <header>
+      <h1>ปฏิทินการจอง</h1>
+      <p>ดูภาพรวมทั้งเดือนว่าวันไหนมีลูกค้า วันไหนห้องว่าง เพื่อวางแผนล่วงหน้า</p>
+    </header>
+    <div id="msgBox"></div>
+
+    <div class="cal-toolbar">
+      <button class="ghost" id="prevMonth">‹ เดือนก่อน</button>
+      <div class="cal-month-label" id="monthLabel"></div>
+      <button class="ghost" id="nextMonth">เดือนถัดไป ›</button>
+      <button class="ghost" id="todayBtn">วันนี้</button>
+    </div>
+
+    <div class="cal-legend">
+      <span><i class="cal-dot free"></i>ว่าง (คลิกเพื่อจอง)</span>
+      <span><i class="cal-dot pending"></i>รอยืนยัน</span>
+      <span><i class="cal-dot confirmed"></i>ยืนยันแล้ว</span>
+      <span><i class="cal-dot checked_in"></i>เช็คอินแล้ว</span>
+      <span><i class="cal-dot checked_out"></i>เช็คเอาท์แล้ว</span>
+    </div>
+
+    <div id="calWrap"><div class="empty">กำลังโหลด...</div></div>
+  </div>
+</div>
+<script type="module">
+  import { supabase, requireSession, logout, gateOwnerOnlyNav, STATUS_TH } from "./assets/app.js";
+
+  const calWrap = document.getElementById("calWrap");
+  const monthLabel = document.getElementById("monthLabel");
+  let cursor = new Date();
+  cursor.setDate(1);
+
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+  document.getElementById("prevMonth").addEventListener("click", () => {
+    cursor.setMonth(cursor.getMonth() - 1);
+    load();
+  });
+  document.getElementById("nextMonth").addEventListener("click", () => {
+    cursor.setMonth(cursor.getMonth() + 1);
+    load();
+  });
+  document.getElementById("todayBtn").addEventListener("click", () => {
+    cursor = new Date();
+    cursor.setDate(1);
+    load();
+  });
+
+  function toISODate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function dayLabel(d) {
+    return d.toLocaleDateString("th-TH", { weekday: "short" });
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  async function load() {
+    calWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
+    monthLabel.textContent = cursor.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+
+    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const daysInMonth = Math.round((monthEnd - monthStart) / 86400000);
+
+    const [unitsRes, bookingsRes] = await Promise.all([
+      supabase.from("units").select("id, code, name").eq("is_active", true).order("code"),
+      supabase
+        .from("bookings")
+        .select("id, unit_id, check_in, check_out, status, booking_ref, guests(display_name)")
+        .in("status", ["pending", "confirmed", "checked_in", "checked_out"])
+        .lt("check_in", toISODate(monthEnd))
+        .gt("check_out", toISODate(monthStart)),
+    ]);
+
+    if (unitsRes.error || bookingsRes.error) {
+      const err = unitsRes.error || bookingsRes.error;
+      calWrap.innerHTML = `<div class="msg error">โหลดข้อมูลไม่สำเร็จ: ${err.message}</div>`;
+      return;
+    }
+
+    render(unitsRes.data || [], bookingsRes.data || [], monthStart, daysInMonth);
+  }
+
+  function render(units, bookings, monthStart, daysInMonth) {
+    if (!units.length) {
+      calWrap.innerHTML = `<div class="empty">ยังไม่มียูนิต</div>`;
+      return;
+    }
+
+    const todayISO = toISODate(new Date());
+    const days = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
+      return { date: d, iso: toISODate(d) };
+    });
+
+    let html = `<table class="cal-table"><thead><tr><th class="cal-unit-col">ยูนิต</th>`;
+    for (const d of days) {
+      const dow = d.date.getDay();
+      const weekend = dow === 0 || dow === 6;
+      const isToday = d.iso === todayISO;
+      html += `<th class="cal-day-head${weekend ? " weekend" : ""}${isToday ? " today" : ""}"><span class="dnum">${d.date.getDate()}</span><span class="dname">${dayLabel(d.date)}</span></th>`;
+    }
+    html += `</tr></thead><tbody>`;
+
+    for (const unit of units) {
+      const unitBookings = bookings.filter((b) => b.unit_id === unit.id);
+      html += `<tr><td class="cal-unit-col">${escapeHtml(unit.name)}</td>`;
+      for (const d of days) {
+        const b = unitBookings.find((bk) => d.iso >= bk.check_in && d.iso < bk.check_out);
+        const weekend = d.date.getDay() === 0 || d.date.getDay() === 6;
+        const isToday = d.iso === todayISO;
+        if (b) {
+          const guestName = b.guests?.display_name || "แขก";
+          html += `<td class="cal-cell ${b.status}${isToday ? " today" : ""}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestName)}</td>`;
+        } else {
+          html += `<td class="cal-cell free${weekend ? " weekend" : ""}${isToday ? " today" : ""}" data-unit="${unit.id}" data-date="${d.iso}" title="ว่าง — คลิกเพื่อเพิ่มการจอง"></td>`;
+        }
+      }
+      html += `</tr>`;
+    }
+    html += `</tbody></table>`;
+    calWrap.innerHTML = html;
+
+    calWrap.querySelectorAll("td.cal-cell.free").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        const unitId = cell.dataset.unit;
+        const date = cell.dataset.date;
+        window.location.href = `./new-booking.html?unit=${encodeURIComponent(unitId)}&checkin=${encodeURIComponent(date)}`;
+      });
+    });
+  }
+
+  async function init() {
+    const session = await requireSession();
+    if (!session) return;
+    await gateOwnerOnlyNav(session);
+    await load();
+  }
+
+  init();
+</script>
+</body>
+</html>
