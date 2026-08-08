@@ -70,6 +70,9 @@ nav.side button.logout {
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: end; }
 .toolbar .field { margin: 0; }
 .toolbar label { display:block; font-size: 0.75rem; color: var(--ink-soft); margin-bottom: 3px; }
+.toolbar #searchQuery { min-width: 220px; }
+
+.section-heading { margin: 32px 0 14px; padding-top: 24px; border-top: 1px solid var(--line); }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .kpi { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
