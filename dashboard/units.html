@@ -235,7 +235,15 @@
       .select("role")
       .eq("id", session.user.id)
       .maybeSingle();
-    isOwner = profile?.role === "owner";
+
+    if (profile?.role !== "owner") {
+      // Not just hiding the edit form — this whole page (unit prices +
+      // revenue report) is owner-only, so bounce non-owners out before any
+      // report data is fetched or rendered.
+      window.location.href = "./bookings.html";
+      return;
+    }
+    isOwner = true;
 
     renderAddForm();
     await reload();

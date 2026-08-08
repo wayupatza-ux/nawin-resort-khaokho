@@ -12,7 +12,7 @@
     <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
     <a href="./bookings.html">การจอง</a>
     <a href="./new-booking.html" class="active">เพิ่มการจอง (walk-in)</a>
-    <a href="./units.html">ยูนิต &amp; รายงาน</a>
+    <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
   </nav>
   <div class="content" style="max-width:560px;">
@@ -66,7 +66,7 @@
   </div>
 </div>
 <script type="module">
-  import { supabase, requireSession, logout } from "./assets/app.js";
+  import { supabase, requireSession, logout, gateOwnerOnlyNav } from "./assets/app.js";
 
   let units = [];
   let totalTouchedByUser = false;
@@ -230,6 +230,7 @@
   async function init() {
     const session = await requireSession();
     if (!session) return;
+    await gateOwnerOnlyNav(session);
     await loadUnits();
     recalcPrice();
   }

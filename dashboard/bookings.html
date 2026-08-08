@@ -12,7 +12,7 @@
     <div class="brand">Nawin Resort<span class="sub">Khaokho Dashboard</span></div>
     <a href="./bookings.html" class="active">การจอง</a>
     <a href="./new-booking.html">เพิ่มการจอง (walk-in)</a>
-    <a href="./units.html">ยูนิต &amp; รายงาน</a>
+    <a href="./units.html" data-owner-only>ยูนิต &amp; รายงาน</a>
     <button class="logout" id="logoutBtn">ออกจากระบบ</button>
   </nav>
   <div class="content">
@@ -48,7 +48,7 @@
   </div>
 </div>
 <script type="module">
-  import { supabase, requireSession, logout, fmtDate, fmtBaht, STATUS_TH } from "./assets/app.js";
+  import { supabase, requireSession, logout, fmtDate, fmtBaht, STATUS_TH, gateOwnerOnlyNav } from "./assets/app.js";
 
   const tableWrap = document.getElementById("tableWrap");
   const STATUSES = ["pending", "confirmed", "checked_in", "checked_out", "cancelled", "no_show"];
@@ -145,6 +145,7 @@
   async function init() {
     const session = await requireSession();
     if (!session) return;
+    await gateOwnerOnlyNav(session);
     await load();
   }
 

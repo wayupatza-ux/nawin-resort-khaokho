@@ -17,6 +17,28 @@ export async function logout() {
   window.location.href = "./index.html";
 }
 
+// Returns the signed-in user's role ('owner' | 'manager' | 'staff'), or
+// null if they have no profiles row. Used for owner-only UI (units/reports).
+export async function getRole(session) {
+  const { data } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", session.user.id)
+    .maybeSingle();
+  return data?.role ?? null;
+}
+
+// Hides every element tagged [data-owner-only] when the signed-in user's
+// role isn't 'owner'. Call after requireSession() on any page whose nav
+// includes the units/reports link.
+export async function gateOwnerOnlyNav(session) {
+  const role = await getRole(session);
+  if (role !== "owner") {
+    document.querySelectorAll("[data-owner-only]").forEach((el) => el.remove());
+  }
+  return role;
+}
+
 export function fmtDate(d) {
   return new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
