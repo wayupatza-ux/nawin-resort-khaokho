@@ -12,10 +12,19 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// staff-app is a public static site — this endpoint has no cookies/session
+// to protect via CORS, auth is the LIFF ID token in the body, so a
+// wildcard origin is fine here.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
   });
 }
 
@@ -173,6 +182,8 @@ async function handleBook(req: Request) {
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/staff-api/, "");
 
