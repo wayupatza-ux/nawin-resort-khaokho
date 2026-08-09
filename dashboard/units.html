@@ -272,7 +272,7 @@
     const disabled = isOwner ? "" : "disabled";
     unitsTableWrap.innerHTML = `
       <table>
-        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ประเภท</th><th>ราคา/คืน</th><th>ความจุ</th><th>เปิดใช้งาน</th>${isOwner ? "<th></th>" : ""}</tr></thead>
+        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ประเภท</th><th>ราคา/คืน</th><th>ความจุ</th><th>เปิดใช้งาน</th><th>ชื่อห้องใน Agoda</th>${isOwner ? "<th></th>" : ""}</tr></thead>
         <tbody>
           ${units
             .map(
@@ -284,6 +284,7 @@
               <td><input type="number" data-field="base_price" data-id="${u.id}" value="${u.base_price}" style="width:100px;" ${disabled} /></td>
               <td><input type="number" data-field="capacity" data-id="${u.id}" value="${u.capacity}" style="width:70px;" ${disabled} /></td>
               <td><input type="checkbox" data-field="is_active" data-id="${u.id}" ${u.is_active ? "checked" : ""} ${disabled} /></td>
+              <td><input type="text" data-field="agoda_room_type_name" data-id="${u.id}" value="${u.agoda_room_type_name ? escapeHtml(u.agoda_room_type_name) : ""}" placeholder="เช่น Deluxe Room" style="width:160px;" ${disabled} /></td>
               ${isOwner ? `<td><button class="ghost" data-delete-id="${u.id}" data-delete-code="${u.code}">ลบ</button></td>` : ""}
             </tr>`,
             )
@@ -291,7 +292,7 @@
         </tbody>
       </table>
       <p style="color:var(--ink-soft); font-size:0.82rem; margin-top:10px;">
-        ${isOwner ? "แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ" : "เฉพาะเจ้าของ (owner) เท่านั้นที่แก้ไขห้องได้"}
+        ${isOwner ? "แก้ไขค่าแล้วกด Enter หรือคลิกออกจากช่องเพื่อบันทึกอัตโนมัติ · \"ชื่อห้องใน Agoda\" ต้องตรงกับชื่อ room type ที่ตั้งไว้ใน Agoda YCS เพื่อให้ระบบจับคู่การจองอัตโนมัติได้ถูกห้อง" : "เฉพาะเจ้าของ (owner) เท่านั้นที่แก้ไขห้องได้"}
       </p>
     `;
 
@@ -391,7 +392,7 @@
   async function reload() {
     const { data: units, error } = await supabase
       .from("units")
-      .select("id, code, name, unit_type, base_price, capacity, is_active, photo_urls")
+      .select("id, code, name, unit_type, base_price, capacity, is_active, photo_urls, agoda_room_type_name")
       .order("code");
     if (error) {
       unitsTableWrap.innerHTML = `<div class="msg error">โหลดห้องไม่สำเร็จ: ${error.message}</div>`;

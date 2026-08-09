@@ -76,6 +76,34 @@
 - **สมัคร LINE Verified Official Account** (บัญชีติ๊กเขียว) ผ่าน [LINE OA Manager](https://manager.line.biz/) → Settings → Account settings → ดูตัวเลือกยื่นขอ verified — ต้องใช้เอกสารจดทะเบียนธุรกิจ ใช้เวลาพิจารณาหลายวัน แต่ช่วยให้ลูกค้ามั่นใจว่าเป็น OA ตัวจริง
 - ย้ำกับพนักงาน/ตัวเองว่า **ห้ามส่งเลขบัญชี/QR ผ่านแชทเด็ดขาด** ให้ลูกค้าเปิดแอปดูเองเท่านั้น เพื่อรักษาความน่าเชื่อถือของระบบนี้ไว้
 
+### เชื่อม Agoda เข้าระบบ (ไม่ผ่าน channel manager) — เตรียมไว้แล้ว รอต่อฝั่งรับอีเมล
+
+สร้าง edge function `agoda-intake` ไว้แล้ว รับข้อมูลการจองที่แกะมาจากอีเมลแจ้งจองของ Agoda (หรือจากทางอื่นในอนาคต เช่น channel manager) แล้วสร้าง/อัปเดต/ยกเลิกแถวใน `bookings` อัตโนมัติ (source = `agoda`) — กันชนกับการจองตรงด้วย exclusion constraint เดิม (ถ้าชนวันที่จะได้ error กลับมาทันทีให้ไปตรวจมือ ไม่ทับข้อมูลมั่ว)
+
+**ที่บอสตองต้องทำเอง:**
+1. **ตั้งชื่อห้องให้ตรงกับ Agoda** — เข้า Dashboard → ยูนิต & รายงาน → กรอกช่อง **"ชื่อห้องใน Agoda"** ของแต่ละห้อง ให้ตรงกับชื่อ room type ที่ตั้งไว้ใน Agoda YCS เป๊ะๆ (เช่น "Deluxe Room") ไม่งั้นระบบจับคู่ไม่ถูกห้อง
+2. **ต่อฝั่งอ่านอีเมล** — เลือกอย่างใดอย่างหนึ่ง:
+   - ให้ Hermes เพิ่ม cron job อ่านอีเมลแจ้งจองจาก Agoda (ที่ inbox ที่ Agoda YCS ส่งแจ้งเข้า) แกะข้อมูล แล้วยิง POST ไปที่ endpoint ด้านล่าง
+   - หรือใช้ Zapier/Make (free tier) ตั้ง Gmail trigger → webhook ไปที่ endpoint เดียวกัน
+3. **Endpoint ที่ต้องยิง:**
+   ```
+   POST https://espxwmnaoauhsdgckwpr.supabase.co/functions/v1/agoda-intake/booking
+   Header: x-internal-secret: <ขอค่าจริงจาก Claude ในแชท ไม่เก็บไว้ในไฟล์นี้>
+   Body (JSON):
+   {
+     "externalRef": "เลขที่จอง Agoda (ใช้กันจองซ้ำ/ใช้ยกเลิก)",
+     "roomTypeName": "ชื่อ room type ตามที่ Agoda ส่งมา",
+     "guestName": "ชื่อแขก",
+     "guestPhone": "เบอร์โทร (ถ้ามี)",
+     "checkIn": "YYYY-MM-DD",
+     "checkOut": "YYYY-MM-DD",
+     "numGuests": 2,
+     "totalAmount": 1800
+   }
+   ```
+   ยิงซ้ำด้วย `externalRef` เดิมได้ (จะ update ไม่สร้างซ้ำ) — ยกเลิกให้ส่ง `{"externalRef": "...", "action": "cancel"}` แทน
+4. ทดสอบผ่านแล้วด้วย curl จริง (สร้าง/แก้ไข/ยกเลิก/ชนวันที่/ห้องไม่ตรง) — ครบทุกกรณี ก่อน apply กับข้อมูลจริง
+
 ## หมายเหตุสถาปัตยกรรม
 
 - ทุกตารางมี RLS default-deny; guest-app ไม่เข้าตาราง `bookings`/`guests` ตรงๆ เลย ทุกอย่างผ่าน `guest-api` edge function ด้วย service-role key + ยืนยัน LIFF ID token ทุก request
