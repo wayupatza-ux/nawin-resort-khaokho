@@ -18,11 +18,19 @@
 </div>
 <script type="module">
   import { supabase, ensureLiff, getIdToken, callStaffApi, fmtBaht } from "./assets/app.js";
+  import { buildPromptPayPayload, qrImageUrl } from "./assets/promptpay.js";
 
   const main = document.getElementById("main");
   let units = [];
   let idToken = null;
   let totalTouchedByUser = false;
+  let resortSettings = {};
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
 
   function typeLabel(t) {
     return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
@@ -57,6 +65,7 @@
         <div class="field"><label>หมายเหตุ</label><textarea id="notes" rows="2" placeholder="เช่น เหตุผลที่ปรับราคา"></textarea></div>
       </section>
       <button class="primary" id="submitBtn">บันทึกการจอง</button>
+      <div id="paymentResultWrap"></div>
     `;
 
     document.getElementById("unitId").addEventListener("change", recalcPrice);
@@ -109,6 +118,47 @@
     document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}" style="margin-bottom:12px;">${text}</div>`;
   }
 
+  function renderPaymentQR(bookingRef, amount) {
+    const wrap = document.getElementById("paymentResultWrap");
+    if (!wrap) return;
+    if (!resortSettings.promptpay_id) {
+      wrap.innerHTML = `<div class="msg info" style="margin-top:14px;">จองสำเร็จ แต่ยังไม่ได้ตั้งค่า PromptPay ID — แจ้งเจ้าของให้ตั้งค่าในหน้า Dashboard</div>`;
+      return;
+    }
+    const payload = buildPromptPayPayload(resortSettings.promptpay_id, amount);
+    const url = qrImageUrl(payload, 300);
+    wrap.innerHTML = `
+      <div class="card" style="margin-top:14px; text-align:center; border-color:var(--clay);">
+        <div style="font-weight:600; margin-bottom:6px;">เลขที่จอง ${escapeHtml(bookingRef)}</div>
+        <img src="${url}" alt="PromptPay QR" style="width:220px; height:220px; margin:0 auto 10px; display:block; border-radius:10px;" />
+        <div style="font-size:0.9rem; color:var(--ink-soft);">${escapeHtml(resortSettings.promptpay_name || "Nawin Resort Khaokho")}</div>
+        <div style="font-weight:700; font-size:1.2rem; color:var(--clay-dark); margin:4px 0 12px;">${fmtBaht(amount)}</div>
+        <button class="primary" id="shareQrBtn" style="width:auto; padding:10px 20px;">ส่ง QR ให้ลูกค้า</button>
+        <p style="font-size:0.78rem; color:var(--ink-soft); margin-top:8px;">กดปุ่มเพื่อแชร์ผ่าน LINE/ข้อความ หรือแตะรูปค้างไว้เพื่อบันทึก/ส่งต่อ</p>
+      </div>
+    `;
+    document.getElementById("shareQrBtn").addEventListener("click", () => shareQr(url, bookingRef, amount));
+  }
+
+  async function shareQr(url, bookingRef, amount) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const file = new File([blob], `qr-${bookingRef}.png`, { type: "image/png" });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "QR ชำระเงิน",
+          text: `เลขที่จอง ${bookingRef} ยอด ${fmtBaht(amount)}`,
+        });
+        return;
+      }
+    } catch {
+      // fall through to opening the image directly
+    }
+    window.open(url, "_blank");
+  }
+
   async function submitBooking() {
     const unitId = document.getElementById("unitId").value;
     const guestName = document.getElementById("guestName").value.trim();
@@ -144,6 +194,7 @@
       document.getElementById("notes").value = "";
       totalTouchedByUser = false;
       recalcPrice();
+      renderPaymentQR(booking.booking_ref, totalAmount || document.getElementById("totalAmount").value);
     } catch (e) {
       showMsg(e.message || "บันทึกไม่สำเร็จ");
     } finally {
@@ -166,6 +217,12 @@
         .order("unit_type");
       if (error) throw error;
       units = data || [];
+
+      const { data: settingsRows } = await supabase.from("resort_settings").select("key, value");
+      const map = {};
+      for (const row of settingsRows || []) map[row.key] = row.value || "";
+      resortSettings = map;
+
       render();
     } catch (e) {
       main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
