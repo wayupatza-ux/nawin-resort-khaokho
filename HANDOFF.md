@@ -28,6 +28,17 @@
 - ✅ **Custom domain** `khaokho.nawingroup.com` — DNS record เพิ่มที่ Squarespace (ผ่าน Google Workspace) แล้ว, GitHub Pages ตั้ง custom domain แล้ว — เหลือแค่รอ GitHub ออก SSL certificate เองอัตโนมัติ (มักไม่เกิน 1 ชม. หลัง DNS ตั้งเสร็จ)
 - ✅ **Supabase Auth owner user** — บอสตอง (`wayupatza@gmail.com`) ผูก role `owner` แล้ว, login dashboard ได้เลย
 
+## สิ่งที่บอสตองต้องทำเอง — ตั้งค่าให้ "ลืมรหัสผ่าน?" ใช้งานได้
+
+หน้า login เพิ่มปุ่ม "ลืมรหัสผ่าน?" แล้ว (ให้พนักงานกู้รหัสผ่านเองได้ ไม่ต้องให้ใครแตะรหัสผ่านคนอื่น) แต่ Supabase บล็อกไม่ให้ redirect ไปโดเมนที่ไม่ได้อยู่ใน allow-list ต้องตั้งค่า 1 ครั้ง:
+
+1. เข้า [Supabase Dashboard](https://supabase.com/dashboard/project/espxwmnaoauhsdgckwpr/auth/url-configuration) → Authentication → **URL Configuration**
+2. **Site URL**: ใส่ `https://khaokho.nawingroup.com`
+3. **Redirect URLs**: เพิ่ม `https://khaokho.nawingroup.com/dashboard/reset-password.html` (หรือใส่ `https://khaokho.nawingroup.com/**` แบบ wildcard ให้ครอบคลุมทุกหน้าในโดเมนนี้)
+4. Save
+
+**แก้ปัญหาบีม login ไม่ได้เฉพาะหน้าตอนนี้เลย** (เร็วกว่ารอ 4 ข้อบนเสร็จ): เข้า Supabase Dashboard → Authentication → Users → หา `awatsada.beam@gmail.com` → กด "..." → **Send password recovery** (ส่งอีเมลให้บีมตั้งรหัสใหม่เอง) — แต่ก็ยังต้องตั้งค่า URL Configuration ข้างบนก่อน ไม่งั้นลิงก์ในอีเมลจะ redirect ผิดที่
+
 ## สิ่งที่บอสตองต้องทำเอง (บล็อกไม่ได้ เพราะต้องเป็นเจ้าของบัญชี)
 
 ### ผูกบัญชี LINE ของพนักงานแต่ละคน (สำหรับ `staff-app`)
