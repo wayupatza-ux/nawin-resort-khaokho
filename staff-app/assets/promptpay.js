@@ -13,6 +13,11 @@ function tlv(id, value) {
 
 function formatPromptPayTarget(promptpayId) {
   const digits = String(promptpayId).replace(/[^0-9]/g, "");
+  if (digits.length === 15) {
+    // e-Wallet / merchant ID — issued by a payment aggregator (e.g. CLICX)
+    // rather than a personally-linked phone/citizen ID. Used as-is.
+    return tlv("03", digits);
+  }
   if (digits.length === 13) {
     // National ID / Tax ID — used as-is.
     return tlv("02", digits);
