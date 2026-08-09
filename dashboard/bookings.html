@@ -86,6 +86,7 @@
   const STATUSES = ["pending", "confirmed", "checked_in", "checked_out", "cancelled", "no_show"];
 
   let currentRows = [];
+  let currentRole = null;
   let cursor = new Date();
   cursor.setDate(1);
 
@@ -264,7 +265,7 @@
         <thead>
           <tr>
             <th>เลขที่จอง</th><th>ห้อง</th><th>แขก</th><th>เช็คอิน</th><th>เช็คเอาท์</th>
-            <th>คน</th><th>ยอดเงิน</th><th>จองโดย</th><th>สถานะ</th>
+            <th>คน</th><th>ยอดเงิน</th><th>จองโดย</th><th>สถานะ</th>${currentRole === "owner" ? "<th></th>" : ""}
           </tr>
         </thead>
         <tbody>
@@ -285,6 +286,11 @@
                   ${STATUSES.map((s) => `<option value="${s}" ${s === b.status ? "selected" : ""}>${STATUS_TH[s]}</option>`).join("")}
                 </select>
               </td>
+              ${
+                currentRole === "owner"
+                  ? `<td><button class="ghost delete-booking-btn" data-id="${b.id}" data-ref="${escapeHtml(b.booking_ref)}" title="ลบการจอง">ลบ</button></td>`
+                  : ""
+              }
             </tr>`,
             )
             .join("")}
@@ -295,6 +301,26 @@
     tableWrap.querySelectorAll("select.status-select").forEach((sel) => {
       sel.addEventListener("change", () => updateStatus(sel));
     });
+    tableWrap.querySelectorAll(".delete-booking-btn").forEach((btn) => {
+      btn.addEventListener("click", () => deleteBooking(btn));
+    });
+  }
+
+  async function deleteBooking(btn) {
+    const id = btn.dataset.id;
+    const ref = btn.dataset.ref;
+    if (!window.confirm(`ยืนยันลบการจอง ${ref}? การลบนี้ย้อนกลับไม่ได้`)) return;
+    btn.disabled = true;
+    const { error } = await supabase.from("bookings").delete().eq("id", id);
+    if (error) {
+      showMsg("ลบการจองไม่สำเร็จ: " + error.message);
+      btn.disabled = false;
+      return;
+    }
+    currentRows = currentRows.filter((b) => b.id !== id);
+    renderFilteredList();
+    loadCalendar();
+    showMsg(`ลบการจอง ${ref} แล้ว`, "success");
   }
 
   async function updateStatus(sel) {
@@ -318,7 +344,7 @@
   async function init() {
     const session = await requireSession();
     if (!session) return;
-    await gateOwnerOnlyNav(session);
+    currentRole = await gateOwnerOnlyNav(session);
     await loadCreatedByOptions();
     await Promise.all([loadCalendar(), loadList()]);
   }
