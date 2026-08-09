@@ -21,6 +21,7 @@
       <input type="password" id="password" autocomplete="current-password" />
     </div>
     <button class="primary" id="loginBtn" style="width:100%;">เข้าสู่ระบบ</button>
+    <button class="ghost" id="forgotBtn" style="width:100%; margin-top:10px;">ลืมรหัสผ่าน?</button>
   </div>
 </div>
 <script type="module">
@@ -49,6 +50,23 @@
 
     if (error) return showMsg("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
     window.location.href = "./bookings.html";
+  });
+
+  document.getElementById("forgotBtn").addEventListener("click", async () => {
+    const email = document.getElementById("email").value.trim();
+    if (!email) return showMsg("กรอกอีเมลก่อน แล้วกด \"ลืมรหัสผ่าน?\" อีกครั้ง");
+
+    const btn = document.getElementById("forgotBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังส่งลิงก์...";
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}${window.location.pathname.replace(/index\.html$/, "")}reset-password.html`,
+    });
+    btn.disabled = false;
+    btn.textContent = "ลืมรหัสผ่าน?";
+
+    if (error) return showMsg("ส่งลิงก์ไม่สำเร็จ: " + error.message);
+    showMsg("ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว กรุณาตรวจสอบกล่องจดหมาย (รวมถึง Junk/Spam)", "success");
   });
 
   checkExisting();
