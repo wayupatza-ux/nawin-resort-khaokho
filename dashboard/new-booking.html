@@ -163,38 +163,74 @@
     resortSettings = map;
   }
 
-  function renderPaymentQR(bookingRef, amount) {
+  function fmtDateTh(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function buildSummaryText(info) {
+    return [
+      `ยืนยันการจอง Nawin Resort Khaokho ✅`,
+      `เลขที่จอง: ${info.bookingRef}`,
+      `ชื่อลูกค้า: ${info.guestName}`,
+      `เช็คอิน: ${fmtDateTh(info.checkIn)}`,
+      `เช็คเอาท์: ${fmtDateTh(info.checkOut)}`,
+      `จำนวนผู้เข้าพัก: ${info.numGuests} ท่าน`,
+      `ยอดชำระ: ${fmtBaht(info.amount)}`,
+      `กรุณาชำระผ่าน QR PromptPay ด้านล่างภายใน 24 ชั่วโมง`,
+    ].join("\n");
+  }
+
+  function renderPaymentQR(info) {
     const wrap = document.getElementById("paymentResultWrap");
+    const summaryText = buildSummaryText(info);
     if (!resortSettings.promptpay_id) {
-      wrap.innerHTML = `<div class="msg info" style="margin-top:14px;">จองสำเร็จ แต่ยังไม่ได้ตั้งค่า PromptPay ID — ไปตั้งค่าได้ที่หน้า "ห้อง &amp; รายงาน" เพื่อให้ระบบสร้าง QR ให้อัตโนมัติ</div>`;
+      wrap.innerHTML = `
+        <div class="msg info" style="margin-top:14px;">จองสำเร็จ แต่ยังไม่ได้ตั้งค่า PromptPay ID — ไปตั้งค่าได้ที่หน้า "ห้อง &amp; รายงาน" เพื่อให้ระบบสร้าง QR ให้อัตโนมัติ</div>
+        <div class="card" style="margin-top:10px;">
+          <textarea readonly rows="7" style="width:100%; border:none; background:transparent; resize:none; font:inherit; color:inherit;">${escapeHtml(summaryText)}</textarea>
+          <button class="primary" id="copySummaryBtn" style="width:auto; padding:10px 20px;">คัดลอกข้อความ</button>
+        </div>
+      `;
+      document.getElementById("copySummaryBtn").addEventListener("click", () => copySummary(summaryText));
       return;
     }
-    const payload = buildPromptPayPayload(resortSettings.promptpay_id, amount);
+    const payload = buildPromptPayPayload(resortSettings.promptpay_id, info.amount);
     const url = qrImageUrl(payload, 300);
     wrap.innerHTML = `
       <div class="card" style="margin-top:14px; text-align:center; border-color:var(--clay);">
-        <div style="font-weight:600; margin-bottom:6px;">เลขที่จอง ${escapeHtml(bookingRef)}</div>
+        <div style="font-weight:600; margin-bottom:6px;">เลขที่จอง ${escapeHtml(info.bookingRef)}</div>
         <img src="${url}" alt="PromptPay QR" style="width:220px; height:220px; margin:0 auto 10px; display:block; border-radius:10px;" />
         <div style="font-size:0.9rem; color:var(--ink-soft);">${escapeHtml(resortSettings.promptpay_name || "Nawin Resort Khaokho")}</div>
-        <div style="font-weight:700; font-size:1.2rem; color:var(--clay-dark); margin:4px 0 12px;">${fmtBaht(amount)}</div>
-        <button class="primary" id="shareQrBtn" style="width:auto; padding:10px 20px;">ส่ง QR ให้ลูกค้า</button>
+        <div style="font-weight:700; font-size:1.2rem; color:var(--clay-dark); margin:4px 0 12px;">${fmtBaht(info.amount)}</div>
+        <textarea readonly rows="7" style="width:100%; text-align:left; border:1px solid var(--clay); border-radius:8px; padding:8px; margin-bottom:10px; font:inherit; color:inherit; background:transparent;">${escapeHtml(summaryText)}</textarea>
+        <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+          <button class="primary" id="shareQrBtn" style="width:auto; padding:10px 20px;">ส่ง QR + ข้อความให้ลูกค้า</button>
+          <button id="copySummaryBtn" style="width:auto; padding:10px 20px;">คัดลอกข้อความ</button>
+        </div>
         <p style="font-size:0.78rem; color:var(--ink-soft); margin-top:8px;">กดปุ่มเพื่อแชร์ผ่าน LINE/ข้อความ หรือแตะรูปค้างไว้เพื่อบันทึก/ส่งต่อ</p>
       </div>
     `;
-    document.getElementById("shareQrBtn").addEventListener("click", () => shareQr(url, bookingRef, amount));
+    document.getElementById("shareQrBtn").addEventListener("click", () => shareQr(url, summaryText, info));
+    document.getElementById("copySummaryBtn").addEventListener("click", () => copySummary(summaryText));
   }
 
-  async function shareQr(url, bookingRef, amount) {
+  async function copySummary(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showMsg("คัดลอกข้อความแล้ว", "success");
+    } catch {
+      window.prompt("คัดลอกข้อความนี้:", text);
+    }
+  }
+
+  async function shareQr(url, summaryText, info) {
     try {
       const res = await fetch(url);
       const blob = await res.blob();
-      const file = new File([blob], `qr-${bookingRef}.png`, { type: "image/png" });
+      const file = new File([blob], `qr-${info.bookingRef}.png`, { type: "image/png" });
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: "QR ชำระเงิน",
-          text: `เลขที่จอง ${bookingRef} ยอด ${fmtBaht(amount)}`,
-        });
+        await navigator.share({ files: [file], title: "QR ชำระเงิน", text: summaryText });
         return;
       }
     } catch {
@@ -282,7 +318,14 @@
       document.getElementById("form").reset();
       totalTouchedByUser = false;
       document.getElementById("priceHint").textContent = "";
-      renderPaymentQR(booking.booking_ref, totalAmount);
+      renderPaymentQR({
+        bookingRef: booking.booking_ref,
+        guestName: name,
+        checkIn,
+        checkOut,
+        numGuests,
+        amount: totalAmount,
+      });
     } catch (e2) {
       showMsg(e2.message || "บันทึกไม่สำเร็จ");
     } finally {
