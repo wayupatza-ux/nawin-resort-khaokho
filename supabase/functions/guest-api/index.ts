@@ -50,17 +50,36 @@ async function verifyIdToken(idToken: string): Promise<{ sub: string; name?: str
   return { sub: payload.sub, name: payload.name };
 }
 
-async function getOrCreateGuest(lineUserId: string, displayName?: string) {
+function splitName(fullName: string): { first_name: string; last_name: string | null } {
+  const parts = fullName.trim().split(/\s+/);
+  return { first_name: parts[0], last_name: parts.length > 1 ? parts.slice(1).join(" ") : null };
+}
+
+// Upserts the guest's own-reported name/phone (used for check-in/contact,
+// independent of their LINE display_name) every time they book, so a
+// correction on a later booking overwrites a stale earlier one.
+async function getOrCreateGuest(
+  lineUserId: string,
+  displayName?: string,
+  contact?: { fullName: string; phone: string },
+) {
+  const contactFields = contact ? { ...splitName(contact.fullName), phone: contact.phone } : {};
+
   const { data: existing } = await supabase
     .from("guests")
     .select("id")
     .eq("line_user_id", lineUserId)
     .maybeSingle();
-  if (existing) return existing.id as string;
+  if (existing) {
+    if (contact) {
+      await supabase.from("guests").update(contactFields).eq("id", existing.id);
+    }
+    return existing.id as string;
+  }
 
   const { data: created, error } = await supabase
     .from("guests")
-    .insert({ line_user_id: lineUserId, display_name: displayName })
+    .insert({ line_user_id: lineUserId, display_name: displayName, ...contactFields })
     .select("id")
     .single();
   if (error) throw error;
@@ -90,13 +109,18 @@ async function insertBookingWithRetry(fields: Record<string, unknown>) {
   return { data: null, error: { code: "23505", message: "could not generate a unique booking ref" } as any };
 }
 
+const PHONE_RE = /^0\d{8,9}$/;
+
 async function handleBook(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body?.idToken) return json({ error: "idToken required" }, 400);
-  const { unitId, checkIn, checkOut, numGuests, notes } = body;
+  const { unitId, checkIn, checkOut, numGuests, notes, fullName, phone } = body;
   if (!unitId || !checkIn || !checkOut) {
     return json({ error: "unitId, checkIn, checkOut required" }, 400);
   }
+  const trimmedName = (fullName || "").trim();
+  if (!trimmedName) return json({ error: "กรุณากรอกชื่อ-นามสกุล" }, 400);
+  if (!PHONE_RE.test((phone || "").trim())) return json({ error: "กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง" }, 400);
 
   let line;
   try {
@@ -126,7 +150,7 @@ async function handleBook(req: Request) {
   if (nights <= 0) return json({ error: "checkOut must be after checkIn" }, 400);
   const totalAmount = unit.base_price * nights;
 
-  const guestId = await getOrCreateGuest(line.sub, line.name);
+  const guestId = await getOrCreateGuest(line.sub, line.name, { fullName: trimmedName, phone: phone.trim() });
 
   const { data: booking, error: bookingErr } = await insertBookingWithRetry({
     guest_id: guestId,
@@ -250,6 +274,30 @@ async function handleMyBookings(req: Request) {
   return json({ bookings: withPaymentState });
 }
 
+// Returns the guest's last-saved name/phone, if any, so the booking form
+// can prefill it for a returning guest instead of asking again every time.
+async function handleProfile(req: Request) {
+  const body = await req.json().catch(() => null);
+  if (!body?.idToken) return json({ error: "idToken required" }, 400);
+
+  let line;
+  try {
+    line = await verifyIdToken(body.idToken);
+  } catch {
+    return json({ error: "invalid LIFF token" }, 401);
+  }
+
+  const { data: guest } = await supabase
+    .from("guests")
+    .select("first_name, last_name, phone")
+    .eq("line_user_id", line.sub)
+    .maybeSingle();
+
+  if (!guest || !guest.first_name) return json({ fullName: "", phone: "" });
+  const fullName = [guest.first_name, guest.last_name].filter(Boolean).join(" ");
+  return json({ fullName, phone: guest.phone || "" });
+}
+
 async function handleCancel(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body?.idToken || !body?.bookingId) {
@@ -305,6 +353,7 @@ Deno.serve(async (req: Request) => {
     if (path === "/my-bookings") return await handleMyBookings(req);
     if (path === "/cancel") return await handleCancel(req);
     if (path === "/upload-slip") return await handleUploadSlip(req);
+    if (path === "/profile") return await handleProfile(req);
     return json({ error: "not found" }, 404);
   } catch (e) {
     console.error(e);

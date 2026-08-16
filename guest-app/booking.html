@@ -35,6 +35,18 @@
         <div id="unitList"></div>
       </section>
       <section class="card">
+        <h3>ข้อมูลผู้จอง</h3>
+        <div class="field">
+          <label>ชื่อ-นามสกุล</label>
+          <input type="text" id="fullName" placeholder="เช่น สมชาย ใจดี" />
+        </div>
+        <div class="field">
+          <label>เบอร์โทรศัพท์</label>
+          <input type="tel" id="phone" placeholder="เช่น 0812345678" />
+        </div>
+        <div class="meta" style="margin-top:4px;">ใช้สำหรับติดต่อและเช็คอินเมื่อถึงรีสอร์ท</div>
+      </section>
+      <section class="card">
         <h3>วันที่เข้าพัก</h3>
         <div class="row">
           <div class="field">
@@ -105,11 +117,15 @@
   }
 
   async function submitBooking() {
+    const fullName = document.getElementById("fullName").value.trim();
+    const phone = document.getElementById("phone").value.trim();
     const checkIn = document.getElementById("checkIn").value;
     const checkOut = document.getElementById("checkOut").value;
     const numGuests = Number(document.getElementById("numGuests").value) || 1;
     const notes = document.getElementById("notes").value;
 
+    if (!fullName) return showMsg("กรุณากรอกชื่อ-นามสกุล");
+    if (!/^0\d{8,9}$/.test(phone)) return showMsg("กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง");
     if (!selectedUnitId) return showMsg("กรุณาเลือกห้องที่ต้องการจอง");
     if (!checkIn || !checkOut) return showMsg("กรุณาเลือกวันเช็คอินและเช็คเอาท์");
     if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
@@ -127,6 +143,8 @@
         checkOut,
         numGuests,
         notes,
+        fullName,
+        phone,
       });
       showMsg(`จองสำเร็จ! เลขที่จอง ${booking.booking_ref} — ทางรีสอร์ทจะติดต่อยืนยันผ่าน LINE`, "success");
       setTimeout(() => (window.location.href = "./my-bookings.html"), 1800);
@@ -149,6 +167,15 @@
       if (error) throw error;
       units = data || [];
       render();
+
+      try {
+        const idToken = await getIdToken();
+        const profile = await callGuestApi("/profile", { idToken });
+        if (profile.fullName) document.getElementById("fullName").value = profile.fullName;
+        if (profile.phone) document.getElementById("phone").value = profile.phone;
+      } catch {
+        // prefill is a convenience only — ignore failures silently
+      }
     } catch (e) {
       main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
     }

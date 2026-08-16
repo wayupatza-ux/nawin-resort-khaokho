@@ -43,11 +43,19 @@
     return div.innerHTML;
   }
 
+  // Prefer the guest's own-reported name (collected at booking time) over
+  // their LINE display_name/nickname, which is often not their real name.
+  function guestDisplayName(guest) {
+    if (!guest) return null;
+    if (guest.first_name) return [guest.first_name, guest.last_name].filter(Boolean).join(" ");
+    return guest.display_name || null;
+  }
+
   async function loadPending() {
     paymentsWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     const { data, error } = await supabase
       .from("payments")
-      .select("id, amount, slip_url, paid_at, booking_id, bookings(booking_ref, check_in, check_out, status, guests(display_name, phone), units(name))")
+      .select("id, amount, slip_url, paid_at, booking_id, bookings(booking_ref, check_in, check_out, status, guests(display_name, first_name, last_name, phone), units(name))")
       .eq("verified", false)
       .order("paid_at", { ascending: true });
 
@@ -80,7 +88,7 @@
             <div style="flex:1;">
               <div style="font-weight:600;">${escapeHtml(b?.booking_ref ?? "-")}</div>
               <div style="color:var(--ink-soft); font-size:0.85rem;">
-                ${escapeHtml(b?.units?.name ?? "-")} · ${escapeHtml(b?.guests?.display_name ?? "-")}${b?.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}
+                ${escapeHtml(b?.units?.name ?? "-")} · ${escapeHtml(guestDisplayName(b?.guests) ?? "-")}${b?.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}
               </div>
               <div style="color:var(--ink-soft); font-size:0.85rem;">${b ? fmtDate(b.check_in) + " — " + fmtDate(b.check_out) : ""}</div>
               <div style="font-weight:600; color:var(--clay-dark); margin-top:4px;">${fmtBaht(p.amount)}</div>

@@ -118,6 +118,14 @@
     return div.innerHTML;
   }
 
+  // Prefer the guest's own-reported name (collected at booking time) over
+  // their LINE display_name/nickname, which is often not their real name.
+  function guestDisplayName(guest) {
+    if (!guest) return null;
+    if (guest.first_name) return [guest.first_name, guest.last_name].filter(Boolean).join(" ");
+    return guest.display_name || null;
+  }
+
   // ---------- Calendar ----------
 
   function toISODate(d) {
@@ -140,7 +148,7 @@
       supabase.from("units").select("id, code, name").eq("is_active", true).order("code"),
       supabase
         .from("bookings")
-        .select("id, unit_id, check_in, check_out, status, booking_ref, guests(display_name)")
+        .select("id, unit_id, check_in, check_out, status, booking_ref, guests(display_name, first_name, last_name)")
         .in("status", ["pending", "confirmed", "checked_in", "checked_out"])
         .lt("check_in", toISODate(monthEnd))
         .gt("check_out", toISODate(monthStart)),
@@ -184,7 +192,7 @@
         const weekend = d.date.getDay() === 0 || d.date.getDay() === 6;
         const isToday = d.iso === todayISO;
         if (b) {
-          const guestName = b.guests?.display_name || "แขก";
+          const guestName = (b.guests?.first_name ? [b.guests.first_name, b.guests.last_name].filter(Boolean).join(" ") : b.guests?.display_name) || "แขก";
           html += `<td class="cal-cell ${b.status}${isToday ? " today" : ""}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestName)}</td>`;
         } else {
           html += `<td class="cal-cell free${weekend ? " weekend" : ""}${isToday ? " today" : ""}" data-unit="${unit.id}" data-date="${d.iso}" title="ว่าง — คลิกเพื่อเพิ่มการจอง"></td>`;
@@ -220,7 +228,7 @@
     tableWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     let query = supabase
       .from("bookings")
-      .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, guests(display_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)")
+      .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, guests(display_name, first_name, last_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)")
       .order("check_in", { ascending: false })
       .limit(200);
 
@@ -248,7 +256,7 @@
     const rows = q
       ? currentRows.filter((b) => {
           const ref = (b.booking_ref || "").toLowerCase();
-          const name = (b.guests?.display_name || "").toLowerCase();
+          const name = (guestDisplayName(b.guests) || "").toLowerCase();
           return ref.includes(q) || name.includes(q);
         })
       : currentRows;
@@ -275,7 +283,7 @@
             <tr>
               <td>${escapeHtml(b.booking_ref)}</td>
               <td>${escapeHtml(b.units?.name ?? "-")}</td>
-              <td>${escapeHtml(b.guests?.display_name ?? "-")}${b.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}</td>
+              <td>${escapeHtml(guestDisplayName(b.guests) ?? "-")}${b.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}</td>
               <td>${fmtDate(b.check_in)}</td>
               <td>${fmtDate(b.check_out)}</td>
               <td>${b.num_guests}</td>
