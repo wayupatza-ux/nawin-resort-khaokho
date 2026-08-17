@@ -68,6 +68,10 @@
         </div>
       </section>
       <button class="primary" id="submitBtn">ยืนยันการจอง</button>
+      <div id="lightbox" style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; flex-direction:column;">
+        <img id="lightboxImg" src="" style="max-width:94vw; max-height:82vh; object-fit:contain; border-radius:8px;" />
+        <button id="lightboxClose" style="margin-top:16px; background:#fff; border:none; border-radius:20px; padding:8px 20px; font-size:1rem;">ปิด</button>
+      </div>
     `;
 
     const unitList = document.getElementById("unitList");
@@ -81,7 +85,7 @@
           ${
             u.photo_urls && u.photo_urls.length
               ? `<div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:10px;">
-                  ${u.photo_urls.map((url) => `<img src="${url}" style="width:96px; height:72px; object-fit:cover; border-radius:8px; flex-shrink:0;" />`).join("")}
+                  ${u.photo_urls.map((url) => `<img src="${url}" data-photo="${url}" style="width:96px; height:72px; object-fit:cover; border-radius:8px; flex-shrink:0; cursor:pointer;" />`).join("")}
                 </div>`
               : ""
           }
@@ -102,6 +106,26 @@
           unitList.querySelectorAll(".unit-card").forEach((c) => c.classList.remove("selected"));
           el.classList.add("selected");
         });
+      });
+
+      const lightbox = document.getElementById("lightbox");
+      const lightboxImg = document.getElementById("lightboxImg");
+      unitList.querySelectorAll("img[data-photo]").forEach((img) => {
+        img.addEventListener("click", (e) => {
+          e.stopPropagation();
+          lightboxImg.src = img.dataset.photo;
+          lightbox.style.display = "flex";
+        });
+      });
+      document.getElementById("lightboxClose").addEventListener("click", () => {
+        lightbox.style.display = "none";
+        lightboxImg.src = "";
+      });
+      lightbox.addEventListener("click", (e) => {
+        if (e.target === lightbox) {
+          lightbox.style.display = "none";
+          lightboxImg.src = "";
+        }
       });
     }
 
