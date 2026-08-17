@@ -23,9 +23,12 @@
   const statusEl = document.getElementById("status");
   const loadingEl = document.getElementById("loading");
 
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get("next") === "my-bookings.html" ? "./my-bookings.html" : "./booking.html";
+
   ensureLiff()
     .then(() => {
-      window.location.href = "./booking.html";
+      window.location.href = next;
     })
     .catch((e) => {
       loadingEl.style.display = "none";
