@@ -15,16 +15,20 @@
   <main>
     <div id="status" class="msg info">กำลังเชื่อมต่อ LINE...</div>
     <div id="loading" class="spinner"></div>
+    <a id="openInLine" href="#" style="display:none; width:100%; box-sizing:border-box; padding:13px; background:var(--clay); color:#fff; border-radius:10px; font-weight:600; text-decoration:none; text-align:center;">เปิดผ่านแอป LINE</a>
   </main>
 </div>
 <script type="module">
   import { ensureLiff } from "./assets/app.js";
+  import { CONFIG } from "./assets/config.js";
 
   const statusEl = document.getElementById("status");
   const loadingEl = document.getElementById("loading");
+  const openInLineEl = document.getElementById("openInLine");
 
   const params = new URLSearchParams(window.location.search);
   const next = params.get("next") === "my-bookings.html" ? "./my-bookings.html" : "./booking.html";
+  const liffUrl = `https://liff.line.me/${CONFIG.LIFF_ID}${next === "./my-bookings.html" ? "?next=my-bookings.html" : ""}`;
 
   ensureLiff()
     .then(() => {
@@ -32,8 +36,15 @@
     })
     .catch((e) => {
       loadingEl.style.display = "none";
-      statusEl.className = "msg error";
-      statusEl.textContent = e.message || "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่";
+      if (e.code === "OPEN_IN_LINE") {
+        statusEl.className = "msg info";
+        statusEl.textContent = "กรุณาเปิดลิงก์นี้ผ่านแอป LINE เพื่อจองที่พัก";
+        openInLineEl.href = liffUrl;
+        openInLineEl.style.display = "block";
+      } else {
+        statusEl.className = "msg error";
+        statusEl.textContent = e.message || "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่";
+      }
     });
 </script>
 </body>

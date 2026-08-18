@@ -18,6 +18,18 @@ export function ensureLiff() {
       try {
         await window.liff.init({ liffId: CONFIG.LIFF_ID });
         if (!window.liff.isLoggedIn()) {
+          if (!window.liff.isInClient()) {
+            // Opened outside the LINE app (e.g. Facebook's in-app browser) —
+            // a script-triggered liff.login() redirect gets blocked or
+            // routed through the fragile external web-login flow in many
+            // in-app browsers. Fail with a special error so the page can
+            // show a real, user-tapped link instead, which OS deep-link
+            // handoff honors far more reliably.
+            const err = new Error("OPEN_IN_LINE");
+            err.code = "OPEN_IN_LINE";
+            reject(err);
+            return;
+          }
           window.liff.login();
           return; // page will redirect
         }
