@@ -16,6 +16,10 @@
     <div id="status" class="msg info">กำลังเชื่อมต่อ LINE...</div>
     <div id="loading" class="spinner"></div>
     <a id="openInLine" href="#" style="display:none; width:100%; box-sizing:border-box; padding:13px; background:var(--clay); color:#fff; border-radius:10px; font-weight:600; text-decoration:none; text-align:center;">เปิดผ่านแอป LINE</a>
+    <div id="openInLineHint" class="meta" style="display:none; margin-top:14px; text-align:center; line-height:1.6;">
+      ถ้ากดปุ่มด้านบนแล้วไม่มีอะไรเกิดขึ้น (มักเกิดถ้าเปิดจากในแอป Facebook/Instagram)<br />
+      กรุณาแตะปุ่ม <b>⋯</b> มุมขวาบนของหน้าจอนี้ แล้วเลือก <b>"เปิดใน Safari"</b> ก่อนกดปุ่มอีกครั้ง
+    </div>
   </main>
 </div>
 <script type="module">
@@ -25,6 +29,7 @@
   const statusEl = document.getElementById("status");
   const loadingEl = document.getElementById("loading");
   const openInLineEl = document.getElementById("openInLine");
+  const openInLineHintEl = document.getElementById("openInLineHint");
 
   const params = new URLSearchParams(window.location.search);
   const next = params.get("next") === "my-bookings.html" ? "./my-bookings.html" : "./booking.html";
@@ -41,6 +46,7 @@
         statusEl.textContent = "กรุณาเปิดลิงก์นี้ผ่านแอป LINE เพื่อจองที่พัก";
         openInLineEl.href = liffUrl;
         openInLineEl.style.display = "block";
+        openInLineHintEl.style.display = "block";
       } else {
         statusEl.className = "msg error";
         statusEl.textContent = e.message || "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่";
