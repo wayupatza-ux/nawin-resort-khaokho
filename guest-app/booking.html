@@ -218,6 +218,10 @@
         // prefill is a convenience only — ignore failures silently
       }
     } catch (e) {
+      if (e.code === "OPEN_IN_LINE") {
+        window.location.href = "./index.html";
+        return;
+      }
       main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
     }
   }

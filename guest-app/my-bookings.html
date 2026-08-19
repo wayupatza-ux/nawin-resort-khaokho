@@ -170,6 +170,10 @@
       settings = await getResortSettings().catch(() => ({}));
       await load();
     } catch (e) {
+      if (e.code === "OPEN_IN_LINE") {
+        window.location.href = "./index.html?next=my-bookings.html";
+        return;
+      }
       main.innerHTML = `<div class="msg error">${e.message || "โหลดข้อมูลไม่สำเร็จ"}</div>`;
     }
   }
