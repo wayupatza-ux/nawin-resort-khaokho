@@ -153,6 +153,15 @@
    ยิงซ้ำด้วย `externalRef` เดิมได้ (จะ update ไม่สร้างซ้ำ) — ยกเลิกให้ส่ง `{"externalRef": "...", "action": "cancel"}` แทน
 4. ทดสอบผ่านแล้วด้วย curl จริง (สร้าง/แก้ไข/ยกเลิก/ชนวันที่/ห้องไม่ตรง) — ครบทุกกรณี ก่อน apply กับข้อมูลจริง
 
+## ราคาบ้านพักตามวัน (เพิ่ม 2026-08-20)
+
+บ้านพัก (N1-N3) คิดราคาต่างกันตามวัน: **จ.-พฤ. 1,500 บาท/คืน, ศ.-อา. 2,500 บาท/คืน** และ**วันหยุดนักขัตฤกษ์คิดราคาเท่าวันหยุดสุดสัปดาห์ (2,500) แม้จะตรงกับวันธรรมดา** — เต็นท์ (T1) ราคาคงที่เหมือนเดิมไม่เปลี่ยน
+
+- คอลัมน์ใหม่ใน `units`: `weekday_price`, `weekend_price` — ถ้าเป็น `null` ทั้งคู่ (เช่นเต็นท์) ระบบจะใช้ `base_price` แบบเดิม (flat rate) แทน
+- ตารางใหม่ `public_holidays` (holiday_date, name) — ใส่ปฏิทินวันหยุดราชการปี 2569 ไว้แล้วครบ (อ้างอิงจากมติ ครม. ปี 2569, **ไม่รวม 16 ต.ค. 2569 เพราะเป็นวันหยุดพิเศษเฉพาะ กทม. เท่านั้น** รีสอร์ทอยู่เพชรบูรณ์ไม่เกี่ยว) — **ต้องเพิ่มปฏิทินปีถัดไปเองทุกปีปลายปี** ด้วย SQL `insert into public_holidays (holiday_date, name) values (...)`
+- ฟังก์ชัน SQL `unit_night_rate(unit_id, night_date)` และ `calc_stay_total(unit_id, check_in, check_out)` เป็น single source of truth การคิดราคา ใช้ทั้งจาก `guest-api`, `staff-api`, และหน้าเว็บ (เรียกตรงผ่าน `supabase.rpc()` เพื่อ preview ราคาก่อน submit — ฟังก์ชันนี้ grant ให้ `anon`/`authenticated` เรียกตรงได้ ต่างจากฟังก์ชันอื่นๆ ที่ล็อกไว้เฉพาะ service_role)
+- ถ้าจะปรับราคาในอนาคต แก้ที่ `units.weekday_price`/`weekend_price` ตรงๆ ผ่าน SQL หรือเพิ่ม UI ในหน้า dashboard ทีหลังได้ (ยังไม่มี UI แก้ราคา ต้องแก้ผ่าน SQL เท่านั้นตอนนี้)
+
 ## หมายเหตุสถาปัตยกรรม
 
 - ทุกตารางมี RLS default-deny; guest-app ไม่เข้าตาราง `bookings`/`guests` ตรงๆ เลย ทุกอย่างผ่าน `guest-api` edge function ด้วย service-role key + ยืนยัน LIFF ID token ทุก request
