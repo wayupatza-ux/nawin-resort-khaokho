@@ -81,31 +81,48 @@
       unitList.innerHTML = units
         .map(
           (u) => `
-        <div class="card unit-card" data-id="${u.id}" style="margin-bottom:8px; flex-direction:column; align-items:stretch;">
+        <div class="card unit-card" data-id="${u.id}" style="margin-bottom:10px; flex-direction:column; align-items:stretch;">
           ${
             u.photo_urls && u.photo_urls.length
-              ? `<div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:10px;">
-                  ${u.photo_urls.map((url) => `<img src="${url}" data-photo="${url}" style="width:96px; height:72px; object-fit:cover; border-radius:8px; flex-shrink:0; cursor:pointer;" />`).join("")}
+              ? `<div class="unit-photos" style="position:relative; margin-bottom:8px;">
+                  <div style="display:flex; gap:6px; overflow-x:auto;">
+                    ${u.photo_urls.map((url) => `<img src="${url}" data-photo="${url}" style="width:96px; height:72px; object-fit:cover; border-radius:8px; flex-shrink:0; cursor:zoom-in;" />`).join("")}
+                  </div>
+                  <div class="zoom-hint">🔍 แตะรูปเพื่อดูขยาย</div>
                 </div>`
               : ""
           }
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
+          <div class="unit-select-row">
+            <div class="unit-radio" aria-hidden="true"></div>
+            <div style="flex:1;">
               <div class="name">${u.name}</div>
               <div class="meta">${typeLabel(u.unit_type)} · เข้าพักได้ ${u.capacity} คน</div>
             </div>
             <div class="price">${fmtBaht(u.base_price)}<div class="meta">/คืน</div></div>
           </div>
+          <button type="button" class="ghost select-room-btn">เลือกห้องนี้</button>
         </div>`,
         )
         .join("");
 
-      unitList.querySelectorAll(".unit-card").forEach((el) => {
-        el.addEventListener("click", () => {
-          selectedUnitId = el.dataset.id;
-          unitList.querySelectorAll(".unit-card").forEach((c) => c.classList.remove("selected"));
-          el.classList.add("selected");
+      function selectUnit(el) {
+        selectedUnitId = el.dataset.id;
+        unitList.querySelectorAll(".unit-card").forEach((c) => {
+          c.classList.remove("selected");
+          c.querySelector(".select-room-btn").textContent = "เลือกห้องนี้";
         });
+        el.classList.add("selected");
+        el.querySelector(".select-room-btn").textContent = "✓ เลือกห้องนี้แล้ว";
+      }
+
+      unitList.querySelectorAll(".select-room-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectUnit(btn.closest(".unit-card"));
+        });
+      });
+      unitList.querySelectorAll(".unit-select-row").forEach((row) => {
+        row.addEventListener("click", () => selectUnit(row.closest(".unit-card")));
       });
 
       const lightbox = document.getElementById("lightbox");
