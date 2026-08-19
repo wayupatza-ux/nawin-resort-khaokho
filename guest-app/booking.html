@@ -66,6 +66,7 @@
           <label>หมายเหตุ (ถ้ามี)</label>
           <textarea id="notes" rows="2" placeholder="เช่น เวลาเดินทางถึงโดยประมาณ"></textarea>
         </div>
+        <div id="totalPreview" class="meta"></div>
       </section>
       <button class="primary" id="submitBtn">ยืนยันการจอง</button>
       <div id="lightbox" style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; flex-direction:column;">
@@ -98,7 +99,7 @@
               <div class="name">${u.name}</div>
               <div class="meta">${typeLabel(u.unit_type)} · เข้าพักได้ ${u.capacity} คน</div>
             </div>
-            <div class="price">${fmtBaht(u.base_price)}<div class="meta">/คืน</div></div>
+            <div class="price">${unitPriceLabel(u)}<div class="meta">/คืน</div></div>
           </div>
           <button type="button" class="ghost select-room-btn">เลือกห้องนี้</button>
         </div>`,
@@ -113,6 +114,7 @@
         });
         el.classList.add("selected");
         el.querySelector(".select-room-btn").textContent = "✓ เลือกห้องนี้แล้ว";
+        updateTotalPreview();
       }
 
       unitList.querySelectorAll(".select-room-btn").forEach((btn) => {
@@ -147,10 +149,53 @@
     }
 
     document.getElementById("submitBtn").addEventListener("click", submitBooking);
+    document.getElementById("checkIn").addEventListener("change", updateTotalPreview);
+    document.getElementById("checkOut").addEventListener("change", updateTotalPreview);
   }
 
   function typeLabel(t) {
     return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
+  }
+
+  // House units are priced by day-of-week (weekday/weekend + public
+  // holidays) — show a range here since there's no single flat rate.
+  // The exact total for the chosen dates is always shown after picking
+  // check-in/check-out below.
+  function unitPriceLabel(u) {
+    if (u.weekday_price != null && u.weekend_price != null) {
+      return `${fmtBaht(u.weekday_price)}–${fmtBaht(u.weekend_price)}`;
+    }
+    return fmtBaht(u.base_price);
+  }
+
+  // Real total varies by day-of-week/holiday for house units, so preview
+  // it via the same calc_stay_total the server uses once room + dates
+  // are picked — avoids surprising the guest with a different amount
+  // than the per-night range shown on the room card.
+  let previewToken = 0;
+  async function updateTotalPreview() {
+    const el = document.getElementById("totalPreview");
+    if (!el) return;
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    if (!selectedUnitId || !checkIn || !checkOut || checkOut <= checkIn) {
+      el.textContent = "";
+      return;
+    }
+    const myToken = ++previewToken;
+    el.textContent = "กำลังคำนวณยอดรวม...";
+    const { data, error } = await supabase.rpc("calc_stay_total", {
+      p_unit_id: selectedUnitId,
+      p_check_in: checkIn,
+      p_check_out: checkOut,
+    });
+    if (myToken !== previewToken) return;
+    if (error) {
+      el.textContent = "";
+      return;
+    }
+    const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
+    el.innerHTML = `ยอดรวม ${nights} คืน = <strong style="color:var(--clay-dark);">${fmtBaht(data)}</strong>`;
   }
 
   function showMsg(text, kind = "error") {
@@ -202,7 +247,7 @@
       await ensureLiff();
       const { data, error } = await supabase
         .from("units")
-        .select("id, code, name, unit_type, base_price, capacity, photo_urls")
+        .select("id, code, name, unit_type, base_price, weekday_price, weekend_price, capacity, photo_urls")
         .eq("is_active", true)
         .order("unit_type");
       if (error) throw error;

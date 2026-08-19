@@ -156,7 +156,7 @@ async function handleBook(req: Request) {
 
   const { data: unit, error: unitErr } = await supabase
     .from("units")
-    .select("base_price")
+    .select("id")
     .eq("id", unitId)
     .single();
   if (unitErr || !unit) return json({ error: "unit not found" }, 404);
@@ -165,7 +165,15 @@ async function handleBook(req: Request) {
     (new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000,
   );
   if (nights <= 0) return json({ error: "checkOut must be after checkIn" }, 400);
-  if (!totalAmount) totalAmount = unit.base_price * nights;
+  if (!totalAmount) {
+    const { data: calcTotal, error: calcErr } = await supabase.rpc("calc_stay_total", {
+      p_unit_id: unitId,
+      p_check_in: checkIn,
+      p_check_out: checkOut,
+    });
+    if (calcErr) return json({ error: "price calculation failed" }, 500);
+    totalAmount = calcTotal;
+  }
   if (Number(totalAmount) <= 0) return json({ error: "invalid totalAmount" }, 400);
 
   const guestId = await getOrCreateGuest(guestName, guestPhone);

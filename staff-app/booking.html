@@ -36,13 +36,20 @@
     return { house: "บ้านพัก", tent: "เต็นท์กระโจม", other: "ที่พัก" }[t] || t;
   }
 
+  function unitPriceLabel(u) {
+    if (u.weekday_price != null && u.weekend_price != null) {
+      return `${fmtBaht(u.weekday_price)}–${fmtBaht(u.weekend_price)}/คืน`;
+    }
+    return `${fmtBaht(u.base_price)}/คืน`;
+  }
+
   function render() {
     main.innerHTML = `
       <div id="msgBox"></div>
       <section class="card">
         <h3>ห้อง</h3>
         <select id="unitId">
-          ${units.map((u) => `<option value="${u.id}" data-price="${u.base_price}">${u.name} (${fmtBaht(u.base_price)}/คืน)</option>`).join("")}
+          ${units.map((u) => `<option value="${u.id}">${u.name} (${unitPriceLabel(u)})</option>`).join("")}
         </select>
       </section>
       <section class="card">
@@ -79,21 +86,33 @@
     recalcPrice();
   }
 
-  function computeStandardPrice() {
+  // Nightly rate varies by day of week + public holidays (weekday_price/
+  // weekend_price on the unit) — the real total always comes from the
+  // calc_stay_total DB function so this preview matches what guest-api
+  // would charge, instead of a flat base_price x nights guess.
+  let priceCalcToken = 0;
+  async function computeStandardPrice() {
     const unitId = document.getElementById("unitId").value;
     const checkIn = document.getElementById("checkIn").value;
     const checkOut = document.getElementById("checkOut").value;
-    const opt = document.querySelector(`#unitId option[value="${unitId}"]`);
-    const price = Number(opt?.dataset.price || 0);
     if (!unitId || !checkIn || !checkOut || checkOut <= checkIn) return null;
     const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
-    return { price, nights, total: price * nights };
+    const { data, error } = await supabase.rpc("calc_stay_total", {
+      p_unit_id: unitId,
+      p_check_in: checkIn,
+      p_check_out: checkOut,
+    });
+    if (error) return null;
+    return { nights, total: Number(data) };
   }
 
-  function recalcPrice() {
-    const calc = computeStandardPrice();
+  async function recalcPrice() {
     const hint = document.getElementById("priceHint");
     const totalInput = document.getElementById("totalAmount");
+    const myToken = ++priceCalcToken;
+    hint.textContent = "กำลังคำนวณราคา...";
+    const calc = await computeStandardPrice();
+    if (myToken !== priceCalcToken) return; // a newer recalc superseded this one
     if (!calc) {
       hint.textContent = "";
       return;
@@ -101,7 +120,7 @@
     const resetLink = totalTouchedByUser
       ? ` · <a href="#" id="resetPriceLink" style="color:var(--clay-dark);">ใช้ราคาปกติ</a>`
       : "";
-    hint.innerHTML = `ราคาปกติ ${fmtBaht(calc.price)} x ${calc.nights} คืน = <strong>${fmtBaht(calc.total)}</strong>${resetLink}`;
+    hint.innerHTML = `ราคาปกติ ${calc.nights} คืน = <strong>${fmtBaht(calc.total)}</strong>${resetLink}`;
     const resetEl = document.getElementById("resetPriceLink");
     if (resetEl) {
       resetEl.addEventListener("click", (e) => {
@@ -255,7 +274,7 @@
 
       const { data, error } = await supabase
         .from("units")
-        .select("id, name, unit_type, base_price")
+        .select("id, name, unit_type, base_price, weekday_price, weekend_price")
         .eq("is_active", true)
         .order("unit_type");
       if (error) throw error;
