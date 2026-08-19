@@ -66,8 +66,10 @@
           <label>หมายเหตุ (ถ้ามี)</label>
           <textarea id="notes" rows="2" placeholder="เช่น เวลาเดินทางถึงโดยประมาณ"></textarea>
         </div>
-        <div id="totalPreview" class="meta"></div>
       </section>
+      <div id="totalPreview" class="card" style="text-align:center; border-color:var(--clay); margin-bottom:10px;">
+        <div class="meta">เลือกห้องและวันที่เพื่อดูยอดรวม</div>
+      </div>
       <button class="primary" id="submitBtn">ยืนยันการจอง</button>
       <div id="lightbox" style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; flex-direction:column;">
         <img id="lightboxImg" src="" style="max-width:94vw; max-height:82vh; object-fit:contain; border-radius:8px;" />
@@ -178,12 +180,17 @@
     if (!el) return;
     const checkIn = document.getElementById("checkIn").value;
     const checkOut = document.getElementById("checkOut").value;
-    if (!selectedUnitId || !checkIn || !checkOut || checkOut <= checkIn) {
-      el.textContent = "";
+
+    if (!selectedUnitId) {
+      el.innerHTML = `<div class="meta">เลือกห้องและวันที่เพื่อดูยอดรวม</div>`;
+      return;
+    }
+    if (!checkIn || !checkOut || checkOut <= checkIn) {
+      el.innerHTML = `<div class="meta">เลือกวันเช็คอิน-เช็คเอาท์เพื่อดูยอดรวม</div>`;
       return;
     }
     const myToken = ++previewToken;
-    el.textContent = "กำลังคำนวณยอดรวม...";
+    el.innerHTML = `<div class="meta">กำลังคำนวณยอดรวม...</div>`;
     const { data, error } = await supabase.rpc("calc_stay_total", {
       p_unit_id: selectedUnitId,
       p_check_in: checkIn,
@@ -191,11 +198,14 @@
     });
     if (myToken !== previewToken) return;
     if (error) {
-      el.textContent = "";
+      el.innerHTML = `<div class="meta">คำนวณยอดรวมไม่สำเร็จ</div>`;
       return;
     }
     const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
-    el.innerHTML = `ยอดรวม ${nights} คืน = <strong style="color:var(--clay-dark);">${fmtBaht(data)}</strong>`;
+    el.innerHTML = `
+      <div class="meta">ยอดรวม ${nights} คืน</div>
+      <div style="font-size:1.5rem; font-weight:700; color:var(--clay-dark);">${fmtBaht(data)}</div>
+    `;
   }
 
   function showMsg(text, kind = "error") {
