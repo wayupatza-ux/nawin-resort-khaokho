@@ -25,9 +25,9 @@
 
     <section>
       <div class="cal-toolbar">
-        <button class="ghost" id="prevMonth">‹ เดือนก่อน</button>
+        <button class="ghost" id="prevMonth">‹ 14 วันก่อน</button>
         <div class="cal-month-label" id="monthLabel"></div>
-        <button class="ghost" id="nextMonth">เดือนถัดไป ›</button>
+        <button class="ghost" id="nextMonth">14 วันถัดไป ›</button>
         <button class="ghost" id="todayBtn">วันนี้</button>
       </div>
       <div class="cal-legend">
@@ -87,23 +87,27 @@
 
   let currentRows = [];
   let currentRole = null;
-  let cursor = new Date();
-  cursor.setDate(1);
+  const CAL_WINDOW_DAYS = 14;
+  function startOfDay(d) {
+    const n = new Date(d);
+    n.setHours(0, 0, 0, 0);
+    return n;
+  }
+  let cursor = startOfDay(new Date());
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
   document.getElementById("applyFilter").addEventListener("click", loadList);
   document.getElementById("searchQuery").addEventListener("input", renderFilteredList);
   document.getElementById("prevMonth").addEventListener("click", () => {
-    cursor.setMonth(cursor.getMonth() - 1);
+    cursor.setDate(cursor.getDate() - CAL_WINDOW_DAYS);
     loadCalendar();
   });
   document.getElementById("nextMonth").addEventListener("click", () => {
-    cursor.setMonth(cursor.getMonth() + 1);
+    cursor.setDate(cursor.getDate() + CAL_WINDOW_DAYS);
     loadCalendar();
   });
   document.getElementById("todayBtn").addEventListener("click", () => {
-    cursor = new Date();
-    cursor.setDate(1);
+    cursor = startOfDay(new Date());
     loadCalendar();
   });
 
@@ -138,11 +142,14 @@
 
   async function loadCalendar() {
     calWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
-    monthLabel.textContent = cursor.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
 
-    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-    const daysInMonth = Math.round((monthEnd - monthStart) / 86400000);
+    const windowStart = cursor;
+    const windowEnd = new Date(cursor);
+    windowEnd.setDate(windowEnd.getDate() + CAL_WINDOW_DAYS);
+    const lastDay = new Date(windowEnd);
+    lastDay.setDate(lastDay.getDate() - 1);
+    const fmtShort = (d) => d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+    monthLabel.textContent = `${fmtShort(windowStart)} – ${fmtShort(lastDay)}`;
 
     const [unitsRes, bookingsRes] = await Promise.all([
       supabase.from("units").select("id, code, name").eq("is_active", true).order("code"),
@@ -150,8 +157,8 @@
         .from("bookings")
         .select("id, unit_id, check_in, check_out, status, booking_ref, guests(display_name, first_name, last_name)")
         .in("status", ["pending", "confirmed", "checked_in", "checked_out"])
-        .lt("check_in", toISODate(monthEnd))
-        .gt("check_out", toISODate(monthStart)),
+        .lt("check_in", toISODate(windowEnd))
+        .gt("check_out", toISODate(windowStart)),
     ]);
 
     if (unitsRes.error || bookingsRes.error) {
@@ -160,7 +167,7 @@
       return;
     }
 
-    renderCalendar(unitsRes.data || [], bookingsRes.data || [], monthStart, daysInMonth);
+    renderCalendar(unitsRes.data || [], bookingsRes.data || [], windowStart, CAL_WINDOW_DAYS);
   }
 
   function renderCalendar(units, bookings, monthStart, daysInMonth) {
@@ -171,7 +178,8 @@
 
     const todayISO = toISODate(new Date());
     const days = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
+      const d = new Date(monthStart);
+      d.setDate(d.getDate() + i);
       return { date: d, iso: toISODate(d) };
     });
 
