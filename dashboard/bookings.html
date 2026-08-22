@@ -207,7 +207,11 @@
           }
           const spanIncludesToday = days.slice(i, i + span).some((dd) => dd.iso === todayISO);
           const guestName = (b.guests?.first_name ? [b.guests.first_name, b.guests.last_name].filter(Boolean).join(" ") : b.guests?.display_name) || "แขก";
-          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}" colspan="${span}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestName)}</td>`;
+          // Calendar cells are narrow — show first name only so it fits;
+          // the full name is still in the hover tooltip and the booking
+          // list table below.
+          const guestFirstName = (b.guests?.first_name || b.guests?.display_name || "แขก").split(/\s+/)[0];
+          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}" colspan="${span}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestFirstName)}</td>`;
           i += span;
         } else {
           const isToday = d.iso === todayISO;
