@@ -187,15 +187,32 @@
     for (const unit of units) {
       const unitBookings = bookings.filter((b) => b.unit_id === unit.id);
       html += `<tr><td class="cal-unit-col">${escapeHtml(unit.name)}</td>`;
-      for (const d of days) {
+      let i = 0;
+      while (i < days.length) {
+        const d = days[i];
         const b = unitBookings.find((bk) => d.iso >= bk.check_in && d.iso < bk.check_out);
         const weekend = d.date.getDay() === 0 || d.date.getDay() === 6;
-        const isToday = d.iso === todayISO;
         if (b) {
+          // Merge every consecutive day (within this visible month) that
+          // belongs to the same booking into one cell via colspan, so the
+          // guest name sits once in the middle of their stay instead of
+          // repeating on every single night's cell.
+          let span = 0;
+          while (
+            i + span < days.length &&
+            days[i + span].iso >= b.check_in &&
+            days[i + span].iso < b.check_out
+          ) {
+            span++;
+          }
+          const spanIncludesToday = days.slice(i, i + span).some((dd) => dd.iso === todayISO);
           const guestName = (b.guests?.first_name ? [b.guests.first_name, b.guests.last_name].filter(Boolean).join(" ") : b.guests?.display_name) || "แขก";
-          html += `<td class="cal-cell ${b.status}${isToday ? " today" : ""}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestName)}</td>`;
+          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}" colspan="${span}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestName)}</td>`;
+          i += span;
         } else {
+          const isToday = d.iso === todayISO;
           html += `<td class="cal-cell free${weekend ? " weekend" : ""}${isToday ? " today" : ""}" data-unit="${unit.id}" data-date="${d.iso}" title="ว่าง — คลิกเพื่อเพิ่มการจอง"></td>`;
+          i += 1;
         }
       }
       html += `</tr>`;
