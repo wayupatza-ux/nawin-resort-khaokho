@@ -77,6 +77,36 @@
     <div id="tableWrap"><div class="empty">กำลังโหลด...</div></div>
   </div>
 </div>
+<div class="modal-backdrop" id="reschedBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reschedTitle">
+    <h3 id="reschedTitle">ย้ายวันเข้าพัก</h3>
+    <p class="modal-sub" id="reschedSub"></p>
+    <div class="field">
+      <label>ห้อง</label>
+      <select id="reschedUnit"></select>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>เช็คอินใหม่</label>
+        <input type="date" id="reschedIn" />
+      </div>
+      <div class="field">
+        <label>เช็คเอาท์ใหม่</label>
+        <input type="date" id="reschedOut" />
+      </div>
+    </div>
+    <div class="resched-check" id="reschedCheck">เลือกวันที่ใหม่</div>
+    <div class="field">
+      <label>ยอดเงิน</label>
+      <label class="price-opt"><input type="radio" name="reschedPrice" value="keep" checked /><span id="reschedKeepLabel"></span></label>
+      <label class="price-opt"><input type="radio" name="reschedPrice" value="recalc" /><span id="reschedRecalcLabel">คำนวณใหม่ตามวันที่/ห้องใหม่</span></label>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" id="reschedCancel" type="button">ยกเลิก</button>
+      <button class="primary" id="reschedConfirm" type="button" disabled>ยืนยันย้ายวัน</button>
+    </div>
+  </div>
+</div>
 <script type="module">
   import { supabase, requireSession, logout, fmtDate, fmtBaht, STATUS_TH, gateOwnerOnlyNav } from "./assets/app.js";
 
@@ -257,7 +287,7 @@
     tableWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     let query = supabase
       .from("bookings")
-      .select("id, booking_ref, check_in, check_out, num_guests, status, total_amount, guests(display_name, first_name, last_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)")
+      .select("id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, guests(display_name, first_name, last_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)")
       .order("check_in", { ascending: false })
       .limit(200);
 
@@ -302,7 +332,7 @@
         <thead>
           <tr>
             <th>เลขที่จอง</th><th>ห้อง</th><th>แขก</th><th>เช็คอิน</th><th>เช็คเอาท์</th>
-            <th>คน</th><th>ยอดเงิน</th><th>จองโดย</th><th>สถานะ</th>${currentRole === "owner" ? "<th></th>" : ""}
+            <th>คน</th><th>ยอดเงิน</th><th>จองโดย</th><th>สถานะ</th><th></th>${currentRole === "owner" ? "<th></th>" : ""}
           </tr>
         </thead>
         <tbody>
@@ -323,6 +353,11 @@
                   ${STATUSES.map((s) => `<option value="${s}" ${s === b.status ? "selected" : ""}>${STATUS_TH[s]}</option>`).join("")}
                 </select>
               </td>
+              <td>${
+                RESCHEDULABLE.includes(b.status)
+                  ? `<button class="ghost resched-btn" data-id="${b.id}" title="ย้ายวันเข้าพัก">ย้ายวัน</button>`
+                  : ""
+              }</td>
               ${
                 currentRole === "owner"
                   ? `<td><button class="ghost delete-booking-btn" data-id="${b.id}" data-ref="${escapeHtml(b.booking_ref)}" title="ลบการจอง">ลบ</button></td>`
@@ -337,6 +372,9 @@
 
     tableWrap.querySelectorAll("select.status-select").forEach((sel) => {
       sel.addEventListener("change", () => updateStatus(sel));
+    });
+    tableWrap.querySelectorAll(".resched-btn").forEach((btn) => {
+      btn.addEventListener("click", () => openReschedule(btn.dataset.id));
     });
     tableWrap.querySelectorAll(".delete-booking-btn").forEach((btn) => {
       btn.addEventListener("click", () => deleteBooking(btn));
@@ -377,6 +415,130 @@
     if (row) row.status = newStatus;
     showMsg("อัปเดตสถานะสำเร็จ", "success");
   }
+
+  // ---------- Reschedule (ย้ายวันเข้าพัก) ----------
+
+  // Statuses that still hold a room and can sensibly be moved. Checked-in
+  // guests can only change check-out (extend/shorten), so check-in is locked.
+  const RESCHEDULABLE = ["pending", "confirmed", "checked_in"];
+  const bd = document.getElementById("reschedBackdrop");
+  const rUnit = document.getElementById("reschedUnit");
+  const rIn = document.getElementById("reschedIn");
+  const rOut = document.getElementById("reschedOut");
+  const rCheck = document.getElementById("reschedCheck");
+  const rConfirm = document.getElementById("reschedConfirm");
+  let reschedBooking = null;
+  let reschedTotal = null; // recalculated total for current selection
+  let reschedSeq = 0; // guards against out-of-order async responses
+
+  async function openReschedule(id) {
+    const b = currentRows.find((x) => x.id === id);
+    if (!b) return;
+    reschedBooking = b;
+    reschedTotal = null;
+    const { data: units } = await supabase.from("units").select("id, name").eq("is_active", true).order("code");
+    const list = units || [];
+    // keep the booking's current room selectable even if it was deactivated
+    if (!list.some((u) => u.id === b.unit_id)) list.push({ id: b.unit_id, name: b.units?.name ?? "ห้องเดิม" });
+    rUnit.innerHTML = list.map((u) => `<option value="${u.id}" ${u.id === b.unit_id ? "selected" : ""}>${escapeHtml(u.name)}</option>`).join("");
+    rIn.value = b.check_in;
+    rOut.value = b.check_out;
+    rIn.disabled = b.status === "checked_in";
+    document.getElementById("reschedSub").textContent =
+      `${b.booking_ref} · ${guestDisplayName(b.guests) ?? "แขก"} · ปัจจุบัน ${fmtDate(b.check_in)} – ${fmtDate(b.check_out)}`;
+    document.getElementById("reschedKeepLabel").textContent = `คงยอดเดิม (${fmtBaht(b.total_amount)})`;
+    document.querySelector('input[name="reschedPrice"][value="keep"]').checked = true;
+    bd.hidden = false;
+    refreshReschedCheck();
+  }
+
+  function closeReschedule() {
+    bd.hidden = true;
+    reschedBooking = null;
+  }
+
+  async function refreshReschedCheck() {
+    const b = reschedBooking;
+    if (!b) return;
+    const seq = ++reschedSeq;
+    const unitId = rUnit.value;
+    const cin = rIn.value;
+    const cout = rOut.value;
+    rConfirm.disabled = true;
+    const setCheck = (text, kind = "") => {
+      rCheck.textContent = text;
+      rCheck.className = "resched-check" + (kind ? " " + kind : "");
+    };
+
+    if (!cin || !cout) return setCheck("เลือกวันที่ใหม่");
+    if (cout <= cin) return setCheck("วันเช็คเอาท์ต้องหลังวันเช็คอิน", "bad");
+    if (unitId === b.unit_id && cin === b.check_in && cout === b.check_out) return setCheck("ยังไม่ได้เปลี่ยนวันที่/ห้อง");
+
+    setCheck("กำลังตรวจสอบห้องว่าง...");
+    const [overlap, total] = await Promise.all([
+      supabase
+        .from("bookings")
+        .select("booking_ref, check_in, check_out")
+        .eq("unit_id", unitId)
+        .in("status", ["pending", "confirmed", "checked_in"])
+        .lt("check_in", cout)
+        .gt("check_out", cin)
+        .neq("id", b.id),
+      supabase.rpc("calc_stay_total", { p_unit_id: unitId, p_check_in: cin, p_check_out: cout }),
+    ]);
+    if (seq !== reschedSeq) return; // a newer selection superseded this one
+
+    if (overlap.error) return setCheck("ตรวจห้องว่างไม่สำเร็จ: " + overlap.error.message, "bad");
+    if (overlap.data?.length) {
+      const c = overlap.data[0];
+      return setCheck(`ห้องไม่ว่าง — ชนกับ ${c.booking_ref} (${fmtDate(c.check_in)} – ${fmtDate(c.check_out)})`, "bad");
+    }
+    reschedTotal = total.error ? null : Number(total.data);
+    const nights = Math.round((new Date(cout) - new Date(cin)) / 86400000);
+    document.getElementById("reschedRecalcLabel").textContent =
+      reschedTotal == null ? "คำนวณใหม่ (คำนวณราคาไม่สำเร็จ)" : `คำนวณใหม่ตามวันที่/ห้องใหม่ (${fmtBaht(reschedTotal)})`;
+    document.querySelector('input[name="reschedPrice"][value="recalc"]').disabled = reschedTotal == null;
+    setCheck(`ห้องว่าง ✓ — ${nights} คืน ${fmtDate(cin)} – ${fmtDate(cout)}`, "ok");
+    rConfirm.disabled = false;
+  }
+
+  async function confirmReschedule() {
+    const b = reschedBooking;
+    if (!b) return;
+    const unitId = rUnit.value;
+    const cin = rIn.value;
+    const cout = rOut.value;
+    const useRecalc = document.querySelector('input[name="reschedPrice"]:checked').value === "recalc" && reschedTotal != null;
+    const newTotal = useRecalc ? reschedTotal : Number(b.total_amount);
+
+    const today = toISODate(new Date());
+    const unitName = rUnit.options[rUnit.selectedIndex].text;
+    const line = `[ย้ายวัน ${today}] ${b.check_in}–${b.check_out} (${b.units?.name ?? "-"}) → ${cin}–${cout} (${unitName})` +
+      (useRecalc && newTotal !== Number(b.total_amount) ? ` · ยอด ${b.total_amount} → ${newTotal}` : "");
+    const notes = b.notes ? `${b.notes}\n${line}` : line;
+
+    rConfirm.disabled = true;
+    const { error } = await supabase
+      .from("bookings")
+      .update({ unit_id: unitId, check_in: cin, check_out: cout, total_amount: newTotal, notes })
+      .eq("id", b.id);
+    if (error) {
+      rConfirm.disabled = false;
+      // 23P01 = exclusion_violation: someone booked that room in the meantime
+      showMsg(error.code === "23P01" ? "ห้องนี้ถูกจองไปแล้วในช่วงวันที่เลือก" : "ย้ายวันไม่สำเร็จ: " + error.message);
+      refreshReschedCheck();
+      return;
+    }
+    closeReschedule();
+    showMsg(`ย้ายวัน ${b.booking_ref} เป็น ${fmtDate(cin)} – ${fmtDate(cout)} แล้ว`, "success");
+    await Promise.all([loadList(), loadCalendar()]);
+  }
+
+  [rUnit, rIn, rOut].forEach((el) => el.addEventListener("change", refreshReschedCheck));
+  document.getElementById("reschedCancel").addEventListener("click", closeReschedule);
+  rConfirm.addEventListener("click", confirmReschedule);
+  bd.addEventListener("click", (e) => { if (e.target === bd) closeReschedule(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !bd.hidden) closeReschedule(); });
 
   async function init() {
     const session = await requireSession();

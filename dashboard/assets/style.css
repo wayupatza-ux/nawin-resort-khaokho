@@ -259,3 +259,27 @@ thead .cal-unit-col { background: #f3ede0; z-index: 3; }
 
   .kpi-row { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- Reschedule (ย้ายวัน) modal ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(22, 48, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50;
+}
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  background: var(--paper); border-radius: var(--radius); box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  width: 100%; max-width: 460px; max-height: 92vh; overflow-y: auto; padding: 22px;
+}
+.modal h3 { font-size: 1.15rem; margin-bottom: 4px; }
+.modal .modal-sub { color: var(--ink-soft); font-size: 0.85rem; margin: 0 0 14px; }
+.modal .field { margin-bottom: 12px; }
+.modal .field label { display: block; font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 3px; }
+.modal .field input, .modal .field select { width: 100%; }
+.modal .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modal .resched-check { font-size: 0.85rem; padding: 9px 12px; border-radius: 9px; margin-bottom: 12px; background: #dce9f5; color: #2255a3; }
+.modal .resched-check.ok { background: #dcefe1; color: var(--ok); }
+.modal .resched-check.bad { background: #f8dcd8; color: var(--danger); }
+.modal .price-opt { display: flex; gap: 8px; align-items: flex-start; font-size: 0.85rem; margin-bottom: 6px; }
+.modal .price-opt input { width: auto; margin-top: 3px; }
+.modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+button.resched-btn { padding: 5px 10px; font-size: 0.78rem; white-space: nowrap; }
