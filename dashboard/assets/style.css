@@ -283,3 +283,14 @@ thead .cal-unit-col { background: #f3ede0; z-index: 3; }
 .modal .price-opt input { width: auto; margin-top: 3px; }
 .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 button.resched-btn { padding: 5px 10px; font-size: 0.78rem; white-space: nowrap; }
+
+/* ---------- Calendar drag & drop ---------- */
+td.cal-booking.movable { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+td.cal-booking.movable:active { cursor: grabbing; }
+td.cal-booking.dragging { opacity: 0.4; }
+.drag-preview {
+  position: fixed; z-index: 40; pointer-events: none; border-radius: 6px; border: 2px dashed;
+  display: none;
+}
+.drag-preview.ok { background: rgba(47, 125, 79, 0.28); border-color: var(--ok); }
+.drag-preview.bad { background: rgba(179, 53, 44, 0.28); border-color: var(--danger); }

@@ -200,6 +200,8 @@
     renderCalendar(unitsRes.data || [], bookingsRes.data || [], windowStart, CAL_WINDOW_DAYS);
   }
 
+  let calState = { days: [], bookings: [] };
+
   function renderCalendar(units, bookings, monthStart, daysInMonth) {
     if (!units.length) {
       calWrap.innerHTML = `<div class="empty">ยังไม่มีห้อง</div>`;
@@ -213,6 +215,7 @@
       return { date: d, iso: toISODate(d) };
     });
 
+    calState = { days, bookings };
     let html = `<table class="cal-table"><thead><tr><th class="cal-unit-col">ห้อง</th>`;
     for (const d of days) {
       const dow = d.date.getDay();
@@ -224,7 +227,7 @@
 
     for (const unit of units) {
       const unitBookings = bookings.filter((b) => b.unit_id === unit.id);
-      html += `<tr><td class="cal-unit-col">${escapeHtml(unit.name)}</td>`;
+      html += `<tr data-unit="${unit.id}"><td class="cal-unit-col">${escapeHtml(unit.name)}</td>`;
       let i = 0;
       while (i < days.length) {
         const d = days[i];
@@ -249,7 +252,8 @@
           // the full name is still in the hover tooltip and the booking
           // list table below.
           const guestFirstName = (b.guests?.first_name || b.guests?.display_name || "แขก").split(/\s+/)[0];
-          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}" colspan="${span}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}">${escapeHtml(guestFirstName)}</td>`;
+          const movable = DRAGGABLE.includes(b.status);
+          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}${movable ? " movable" : ""}" colspan="${span}" data-booking="${b.id}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}${movable ? " · ลากเพื่อย้ายวัน" : ""}">${escapeHtml(guestFirstName)}</td>`;
           i += span;
         } else {
           const isToday = d.iso === todayISO;
@@ -262,6 +266,9 @@
     html += `</tbody></table>`;
     calWrap.innerHTML = html;
 
+    calWrap.querySelectorAll("td.cal-booking.movable").forEach((cell) => {
+      cell.addEventListener("pointerdown", (e) => startCalDrag(e, cell));
+    });
     calWrap.querySelectorAll("td.cal-cell.free").forEach((cell) => {
       cell.addEventListener("click", () => {
         const unitId = cell.dataset.unit;
@@ -416,6 +423,112 @@
     showMsg("อัปเดตสถานะสำเร็จ", "success");
   }
 
+  // ---------- Drag & drop on the calendar ----------
+
+  // Checked-in stays are excluded: their check-in is in the past and can't move.
+  const DRAGGABLE = ["pending", "confirmed"];
+  const ACTIVE_STATUSES = ["pending", "confirmed", "checked_in"];
+  const parseISO = (str) => new Date(str + "T12:00:00");
+  function addDays(str, n) {
+    const d = parseISO(str);
+    d.setDate(d.getDate() + n);
+    return toISODate(d);
+  }
+  function diffDays(a, b) {
+    return Math.round((parseISO(b) - parseISO(a)) / 86400000);
+  }
+
+  function calDayIndexAt(x) {
+    const ths = calWrap.querySelectorAll("th.cal-day-head");
+    for (let i = 0; i < ths.length; i++) {
+      const r = ths[i].getBoundingClientRect();
+      if (x >= r.left && x < r.right) return i;
+    }
+    return -1;
+  }
+  function calRowAt(y) {
+    for (const tr of calWrap.querySelectorAll("tbody tr[data-unit]")) {
+      const r = tr.getBoundingClientRect();
+      if (y >= r.top && y < r.bottom) return tr;
+    }
+    return null;
+  }
+
+  function startCalDrag(e, cell) {
+    if (e.button !== undefined && e.button !== 0) return;
+    const b = calState.bookings.find((x) => x.id === cell.dataset.booking);
+    if (!b) return;
+    const startIdx = calDayIndexAt(e.clientX);
+    if (startIdx < 0) return;
+    // which night of the stay was grabbed — the drop keeps that night under the pointer
+    const offset = diffDays(b.check_in, calState.days[startIdx].iso);
+    const nights = diffDays(b.check_in, b.check_out);
+    const st = { x: e.clientX, y: e.clientY, moved: false, target: null, preview: null };
+    try { cell.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+
+    const setPreview = (t, row) => {
+      if (!st.preview) {
+        st.preview = document.createElement("div");
+        st.preview.className = "drag-preview";
+        document.body.appendChild(st.preview);
+      }
+      const ths = calWrap.querySelectorAll("th.cal-day-head");
+      const first = calState.days.findIndex((d) => d.iso >= t.cin);
+      let last = -1;
+      calState.days.forEach((d, i) => { if (d.iso < t.cout) last = i; });
+      if (first < 0 || last < first) {
+        st.preview.style.display = "none"; // moved entirely outside the visible window
+        return;
+      }
+      const l = ths[first].getBoundingClientRect().left;
+      const r = ths[last].getBoundingClientRect().right;
+      const rr = row.getBoundingClientRect();
+      Object.assign(st.preview.style, { display: "block", left: l + "px", width: r - l + "px", top: rr.top + "px", height: rr.height + "px" });
+      st.preview.className = "drag-preview " + (t.conflict ? "bad" : "ok");
+    };
+
+    const onMove = (ev) => {
+      if (!st.moved) {
+        if (Math.hypot(ev.clientX - st.x, ev.clientY - st.y) < 6) return;
+        st.moved = true;
+        cell.classList.add("dragging");
+      }
+      const idx = calDayIndexAt(ev.clientX);
+      const row = calRowAt(ev.clientY);
+      if (idx < 0 || !row) {
+        st.target = null;
+        if (st.preview) st.preview.style.display = "none";
+        return;
+      }
+      const cin = addDays(calState.days[idx].iso, -offset);
+      const cout = addDays(cin, nights);
+      const unitId = row.dataset.unit;
+      const conflict = calState.bookings.some(
+        (o) => o.id !== b.id && o.unit_id === unitId && ACTIVE_STATUSES.includes(o.status) && o.check_in < cout && o.check_out > cin,
+      );
+      st.target = { unitId, cin, cout, conflict };
+      setPreview(st.target, row);
+    };
+    const cleanup = () => {
+      cell.removeEventListener("pointermove", onMove);
+      cell.removeEventListener("pointerup", onUp);
+      cell.removeEventListener("pointercancel", cleanup);
+      cell.classList.remove("dragging");
+      st.preview?.remove();
+    };
+    const onUp = () => {
+      cleanup();
+      const t = st.target;
+      if (!st.moved || !t) return;
+      if (t.unitId === b.unit_id && t.cin === b.check_in) return; // dropped where it started
+      if (t.conflict) return showMsg("ห้องไม่ว่างในช่วงวันที่นั้น (ชนกับการจองอื่น)");
+      openReschedule(b.id, { unitId: t.unitId, cin: t.cin, cout: t.cout });
+    };
+    cell.addEventListener("pointermove", onMove);
+    cell.addEventListener("pointerup", onUp);
+    cell.addEventListener("pointercancel", cleanup);
+  }
+
   // ---------- Reschedule (ย้ายวันเข้าพัก) ----------
 
   // Statuses that still hold a room and can sensibly be moved. Checked-in
@@ -431,9 +544,23 @@
   let reschedTotal = null; // recalculated total for current selection
   let reschedSeq = 0; // guards against out-of-order async responses
 
-  async function openReschedule(id) {
-    const b = currentRows.find((x) => x.id === id);
-    if (!b) return;
+  const BOOKING_SELECT =
+    "id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, guests(display_name, first_name, last_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)";
+
+  // The list is filtered/limited, so a booking dragged from the calendar may
+  // not be in currentRows — fall back to fetching it by id.
+  async function findBooking(id) {
+    const hit = currentRows.find((x) => x.id === id);
+    if (hit) return hit;
+    const { data } = await supabase.from("bookings").select(BOOKING_SELECT).eq("id", id).maybeSingle();
+    return data;
+  }
+
+  let reschedNights = 1;
+
+  async function openReschedule(id, preset) {
+    const b = await findBooking(id);
+    if (!b) return showMsg("ไม่พบการจองนี้");
     reschedBooking = b;
     reschedTotal = null;
     const { data: units } = await supabase.from("units").select("id, name").eq("is_active", true).order("code");
@@ -441,8 +568,10 @@
     // keep the booking's current room selectable even if it was deactivated
     if (!list.some((u) => u.id === b.unit_id)) list.push({ id: b.unit_id, name: b.units?.name ?? "ห้องเดิม" });
     rUnit.innerHTML = list.map((u) => `<option value="${u.id}" ${u.id === b.unit_id ? "selected" : ""}>${escapeHtml(u.name)}</option>`).join("");
-    rIn.value = b.check_in;
-    rOut.value = b.check_out;
+    rIn.value = preset?.cin ?? b.check_in;
+    rOut.value = preset?.cout ?? b.check_out;
+    if (preset?.unitId) rUnit.value = preset.unitId;
+    reschedNights = Math.max(1, diffDays(rIn.value, rOut.value));
     rIn.disabled = b.status === "checked_in";
     document.getElementById("reschedSub").textContent =
       `${b.booking_ref} · ${guestDisplayName(b.guests) ?? "แขก"} · ปัจจุบัน ${fmtDate(b.check_in)} – ${fmtDate(b.check_out)}`;
@@ -534,6 +663,15 @@
     await Promise.all([loadList(), loadCalendar()]);
   }
 
+  // Moving a stay = same number of nights, different start. So when check-in
+  // changes, carry check-out along; when check-out is edited by hand, that
+  // becomes the new length.
+  rIn.addEventListener("change", () => {
+    if (rIn.value) rOut.value = addDays(rIn.value, reschedNights);
+  });
+  rOut.addEventListener("change", () => {
+    if (rIn.value && rOut.value && rOut.value > rIn.value) reschedNights = diffDays(rIn.value, rOut.value);
+  });
   [rUnit, rIn, rOut].forEach((el) => el.addEventListener("change", refreshReschedCheck));
   document.getElementById("reschedCancel").addEventListener("click", closeReschedule);
   rConfirm.addEventListener("click", confirmReschedule);
