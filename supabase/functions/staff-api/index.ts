@@ -126,6 +126,7 @@ async function handleBook(req: Request) {
   if (!body?.idToken) return json({ error: "idToken required" }, 400);
   const { unitId, checkIn, checkOut, numGuests, guestName, guestPhone, notes } = body;
   let totalAmount = body.totalAmount;
+  const breakfastIncluded = body.breakfastIncluded ?? true;
 
   if (!unitId || !checkIn || !checkOut || !guestName) {
     return json({ error: "unitId, checkIn, checkOut, guestName required" }, 400);
@@ -189,6 +190,7 @@ async function handleBook(req: Request) {
     notes: notes ?? null,
     status: "confirmed",
     created_by: staff.id,
+    breakfast_included: Boolean(breakfastIncluded),
   });
 
   if (bookingErr) {
