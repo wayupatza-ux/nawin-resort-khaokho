@@ -53,6 +53,12 @@
           <input type="number" id="numGuests" min="1" value="1" />
         </div>
         <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="breakfastIncluded" checked style="width:auto;" />
+            รวมอาหารเช้า
+          </label>
+        </div>
+        <div class="field">
           <label>ยอดรวม (บาท)</label>
           <input type="number" id="totalAmount" min="0" step="0.01" placeholder="เลือกห้อง+วันที่ก่อน" />
           <div id="priceHint" style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;"></div>
@@ -176,6 +182,7 @@
       `เช็คอิน: ${fmtDateTh(info.checkIn)}`,
       `เช็คเอาท์: ${fmtDateTh(info.checkOut)}`,
       `จำนวนผู้เข้าพัก: ${info.numGuests} ท่าน`,
+      `อาหารเช้า: ${info.breakfastIncluded ? "รวม 🍳" : "ไม่รวม"}`,
       `ยอดชำระ: ${fmtBaht(info.amount)}`,
       `กรุณาชำระผ่าน QR PromptPay ด้านล่างภายใน 24 ชั่วโมง`,
     ].join("\n");
@@ -266,6 +273,7 @@
     const checkOut = document.getElementById("checkOut").value;
     const numGuests = Number(document.getElementById("numGuests").value) || 1;
     const notes = document.getElementById("notes").value;
+    const breakfastIncluded = document.getElementById("breakfastIncluded").checked;
     let totalAmount = document.getElementById("totalAmount").value;
 
     if (!name || !unitId || !checkIn || !checkOut) return showMsg("กรอกข้อมูลให้ครบ");
@@ -304,6 +312,7 @@
             source: "walk-in",
             notes: notes || null,
             status: "confirmed",
+            breakfast_included: breakfastIncluded,
             created_by: currentSession?.user?.id ?? null,
           })
           .select("id, booking_ref")
@@ -324,6 +333,7 @@
         checkIn,
         checkOut,
         numGuests,
+        breakfastIncluded,
         amount: totalAmount,
       });
     } catch (e2) {
