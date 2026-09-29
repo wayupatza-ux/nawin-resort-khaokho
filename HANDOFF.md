@@ -153,6 +153,13 @@
    ยิงซ้ำด้วย `externalRef` เดิมได้ (จะ update ไม่สร้างซ้ำ) — ยกเลิกให้ส่ง `{"externalRef": "...", "action": "cancel"}` แทน
 4. ทดสอบผ่านแล้วด้วย curl จริง (สร้าง/แก้ไข/ยกเลิก/ชนวันที่/ห้องไม่ตรง) — ครบทุกกรณี ก่อน apply กับข้อมูลจริง
 
+**ทำงานจริงแล้ว** ผ่าน Hermes cron "Agoda Booking Sync (เขาค้อ)" ทุก 30 นาที เรียก `.hermes/scripts/agoda_booking_sweep.py` (สคริปต์อยู่ใน `.hermes/` ของ repo หลัก `claude` — gitignored ไม่ commit เข้าที่นี่ ตาม `CODEX_CLAUDE_AGENT.md`) อ่าน Gmail `nawinresort.khaokho@gmail.com` แกะอีเมล Agoda แล้วยิงเข้า `agoda-intake` ตามข้างบน
+
+**บั๊กที่เจอและแก้แล้ว (2026-09-29) — สาเหตุที่ LINE push ของ Hermes ชนโควตารายเดือนตั้งแต่ 17 ก.ย.:**
+1. **Parse bug จริง:** อีเมลจองของ Agoda บางฉบับ (subject ภาษาไทย "หมายเลขการจองของอโกด้า...") มีป้ายกำกับอังกฤษ+ไทยติดกันบนบรรทัดเดียวไม่มีตัวคั่น เช่น `Check-inเช็คอิน`, `Customer First Name ชื่อลูกค้า` — โค้ดเดิมตัดป้ายอังกฤษออกแล้วเจอเศษข้อความไทยที่เหลือ เข้าใจผิดว่าเป็น "ค่า" (เพราะเช็คแค่ว่าไม่ว่างเปล่า) เลยไม่ไปอ่านบรรทัดถัดไปที่เป็นค่าจริง — ทำให้ `checkIn`/`checkOut`/`guestName` เป็น null/ผิดทุกครั้งที่เจอฟอร์แมตนี้ พัง `totalAmount` ด้วยเหตุผลคล้ายกัน (มีบรรทัดแปลไทยคั่นระหว่าง "Net rate" กับยอด THB) แก้แล้วทั้งสามจุด — มีผลกระทบจริงกับการจอง 3 รายการที่ค้างมาหลายวัน (แขก Panutda/Tinnakorn/Sujanya เช็คอิน ต.ค.-ธ.ค. 2569) คีย์เข้าระบบให้เรียบร้อยแล้วด้วยมือหลังแก้บั๊ก
+2. **Alert spam ที่ตามมา:** สคริปต์เดิมไม่เคย mark ข้อความที่ parse ไม่ผ่านว่า "เคยแจ้งแล้ว" เลยแจ้ง error เดิมซ้ำทุก 30 นาที ติดต่อกันหลายวัน (นับได้ ~345 ข้อความใน 10 วันจากรายการเดิมแค่ 3-4 ฉบับ) จนโควตา LINE push รายเดือนของ Hermes หมด ทำให้แจ้งเตือนอื่นๆ (Morning Brief, Evening Summary ฯลฯ) ส่งไม่ได้ไปด้วย — แก้โดยเพิ่ม cooldown 24 ชม. ต่อ message ID ใน state file (`alerted_errors` — ยัง retry การ parse/ส่งจริงทุกรอบเหมือนเดิม แค่ไม่แจ้งซ้ำถ้าเพิ่งแจ้งไปแล้วและยังไม่หาย)
+3. **Quirk เดิมที่ยังไม่ได้แก้ในโค้ด (มี workaround แล้ว):** ถ้าอีเมล confirm+cancel ของ booking เดียวกันมาในชุดเดียว sweep จะประมวลผล cancel ก่อน (Gmail คืนผลใหม่สุดก่อน) ทำให้ cancel ได้ 404 (ยังไม่มี booking ให้ยกเลิก) แล้ว confirm ที่มาทีหลังในลูปเดียวกันดันสร้างจองขึ้นมาทับ ต้องยิง cancel ซ้ำมือทีหลัง (`curl` ตาม endpoint ข้างบน, `{"externalRef":"...","action":"cancel"}`) เจอเคสนี้จริงกับ booking 2054180487 — เช็ค `bookings.status` เทียบกับ subject ล่าสุดของอีเมลเสมอถ้าสงสัยว่า sync ตกหล่น
+
 ## ราคาบ้านพักตามวัน (เพิ่ม 2026-08-20)
 
 บ้านพัก (N1-N3) คิดราคาต่างกันตามวัน: **จ.-พฤ. 1,500 บาท/คืน, ศ.-อา. 2,500 บาท/คืน** และ**วันหยุดนักขัตฤกษ์คิดราคาเท่าวันหยุดสุดสัปดาห์ (2,500) แม้จะตรงกับวันธรรมดา** — เต็นท์ (T1) ราคาคงที่เหมือนเดิมไม่เปลี่ยน
@@ -162,6 +169,24 @@
 - ฟังก์ชัน SQL `unit_night_rate(unit_id, night_date)` และ `calc_stay_total(unit_id, check_in, check_out)` เป็น single source of truth การคิดราคา ใช้ทั้งจาก `guest-api`, `staff-api`, และหน้าเว็บ (เรียกตรงผ่าน `supabase.rpc()` เพื่อ preview ราคาก่อน submit — ฟังก์ชันนี้ grant ให้ `anon`/`authenticated` เรียกตรงได้ ต่างจากฟังก์ชันอื่นๆ ที่ล็อกไว้เฉพาะ service_role)
   - **บั๊กที่เจอตอน deploy (แก้แล้ว 2026-08-20):** ทั้งสองฟังก์ชันนี้ไม่ใช่ `SECURITY DEFINER` (ต่างจาก `check_availability`) ตอนแรก grant ให้ `anon`/`authenticated` แค่ `calc_stay_total` แต่มันเรียก `unit_night_rate` ข้างในด้วยสิทธิ์ผู้เรียก (ไม่ใช่สิทธิ์เจ้าของฟังก์ชัน) ทำให้ลูกค้าจริงเจอ error "คำนวณยอดรวมไม่สำเร็จ" เพราะ permission denied for function unit_night_rate — ต้อง grant execute ให้ `unit_night_rate` แยกต่างหากด้วย ถ้าจะเพิ่มฟังก์ชันคำนวณราคาใหม่ที่ไม่ใช่ SECURITY DEFINER และเรียกฟังก์ชันย่อยอื่นต่อ ต้อง grant ให้ครบทุกฟังก์ชันในเชน ไม่ใช่แค่ตัวนอกสุด
 - ถ้าจะปรับราคาในอนาคต แก้ที่ `units.weekday_price`/`weekend_price` ตรงๆ ผ่าน SQL หรือเพิ่ม UI ในหน้า dashboard ทีหลังได้ (ยังไม่มี UI แก้ราคา ต้องแก้ผ่าน SQL เท่านั้นตอนนี้)
+
+## ระบบสมาชิก — พัก 10 คืน ฟรี 1 คืน ข้ามสาขา (DB layer เสร็จ 2026-09-23, UI ยังไม่ทำ)
+
+บอสตองต้องการระบบสมาชิกร่วมของกลุ่มนาวิน (พัก 10 คืน ฟรี 1 คืน ใช้ข้ามสาขาระหว่าง Nawin Resort เขาค้อ กับโรงแรมนาวิน ดอนเมือง ได้) — สำคัญ: **โปรเจกต์ `nawin-hotel-management` (Supabase `loxhiqsutuboxyllmysw`) ที่เคยวางแผนสำหรับดอนเมืองไม่ได้ใช้งานจริงแล้ว บอสตอง pause ไว้ตั้งใจ** ปัจจุบันดอนเมืองใช้ PMS บุคคลที่สาม (Hoteliers.Guru + OTA channel manager) ไม่มีระบบของเราเองที่เก็บ guest identity/LINE ผูกกับการเข้าพัก — **ระบบนี้ (นาวิน เขาค้อ) จึงเป็นฐานเดียวที่มี guest+booking+LINE identity จริงให้ต่อยอด** สเปกเต็ม (business rules, risk analysis) อยู่ที่ `/Users/bosstong/Documents/claude/docs/loyalty-program-spec.md` (คนละ repo — เขียนไว้ตอนยังเข้าใจผิดว่าโปรเจกต์ดอนเมืองยังใช้อยู่ ต้องอ่านโดยรู้ว่าส่วน "สถาปัตยกรรม" ในนั้นผิด แต่ส่วนกติกา/ความเสี่ยงธุรกิจยังใช้ได้)
+
+**สิ่งที่ทำเสร็จแล้ว (migration `0016_loyalty_program.sql` + `0017_loyalty_credit_on_insert_too.sql`, apply ขึ้น Supabase แล้ว):**
+- ตาราง `loyalty_ledger` (guest_id, booking_id nullable, property `khaokho`/`donmueang`, event_type `night_earned`/`free_night_redeemed`, nights_delta, note, created_by, created_at) — เก็บเป็น ledger ไม่ใช่ยอดรวม เพื่อ audit ย้อนหลังได้ถ้าลูกค้าโต้แย้งยอด
+- Trigger `bookings_credit_loyalty` (`after insert or update` — ครอบทั้ง 2 เคส หลังเจอบั๊กตอนทดสอบว่า `after update` เฉยๆ พลาดเคส insert ตรงเป็น checked_out) ยิงอัตโนมัติเมื่อ `bookings.status` → `checked_out` นับจำนวนคืนจาก `check_out - check_in` กันเครดิตซ้ำด้วย partial unique index บน `booking_id`
+- `get_loyalty_balance(guest_id)` — คืน total_nights_earned / free_nights_redeemed / free_nights_available (= `floor(total/10) - redeemed`) grant ให้ `anon`+`authenticated` เรียกตรงได้ (เผื่อ guest-app จะโชว์ยอดสมาชิกในอนาคต)
+- `redeem_free_night(guest_id, property, booking_id?, note?)` — staff/owner เรียกได้ (เช็คจาก `profiles`) ใช้ `pg_advisory_xact_lock` ต่อ guest กันสองคนกดแลกพร้อมกันเกินสิทธิ์จริง
+- `credit_manual_stay(guest_id, property, nights, note?)` — **เฉพาะ owner/manager** ใช้เครดิตคืนพักดอนเมือง (หรือแหล่งอื่นนอกระบบ) เข้า ledger เดียวกัน เพราะดอนเมืองไม่มี feed อัตโนมัติเข้ามา
+- **ทดสอบแล้วจริงด้วย guest/booking จริงในระบบ** (สร้าง booking ทดสอบ วันที่ 2020 ไม่ชนของจริง แล้วลบทิ้งหมดหลังทดสอบ — ยืนยัน guests/bookings กลับเป็น 17/18 แถวเท่าเดิม): เช็คเอาท์สะสมคืนถูกต้อง, กันเครดิตซ้ำเมื่อ status สลับไปมา, ข้ามสาขา (เขาค้ออัตโนมัติ + ดอนเมืองแมนนวล) รวมยอดถูกต้อง, แลกสิทธิ์ลดยอดถูกต้อง, แลกเกินสิทธิ์ถูกบล็อกด้วย exception, role ที่ไม่ใช่ owner/manager เครดิตแมนนวลไม่ได้
+
+**ยังไม่ได้ทำ (ตั้งใจเว้นไว้ก่อน รอบอสตองยืนยันจุดออกแบบ 2 เรื่องนี้ก่อนทำ UI):**
+1. **จำกัดคืนฟรีให้ใช้ได้เฉพาะห้อง/ยูนิตราคาต่ำสุดหรือไม่** — สเปกเสนอไว้ว่าควรจำกัด (กันลูกค้าสะสมคืนถูกที่ดอนเมืองแล้วมาแลกบ้านพัก 2,500 บาทของเขาค้อฟรี) แต่ยังไม่ได้ใส่เป็นเงื่อนไขบังคับใน `redeem_free_night` — ตอนนี้ staff ต้องเช็คเองว่าจะให้แลกยูนิตไหน ฟังก์ชันไม่ได้บล็อก
+2. **หน้า UI**: ปุ่ม "ใช้สิทธิ์คืนฟรี" ใน `dashboard/` (เรียก `redeem_free_night`/`credit_manual_stay`), หน้า "สิทธิ์สมาชิกของฉัน" ใน `guest-app/` (เรียก `get_loyalty_balance` โชว์ยอดสะสม/คงเหลือ) — ยังไม่ได้ทำทั้งคู่
+3. **Push LINE แจ้งเตือน** เมื่อคืนสะสมเพิ่ม/ได้สิทธิ์ใหม่ — ยังไม่ได้ต่อ (ทำตาม pattern เดียวกับ `notify_booking_confirmed`/`line-notify` ที่มีอยู่แล้วได้เลย)
+4. **ดอนเมืองยังไม่มีหน้าจอ/ทางให้ staff ที่นั่นเครดิตคืนได้เอง** — ตอนนี้ `credit_manual_stay` เรียกได้เฉพาะผ่าน SQL/Dashboard ของบอสตอง (owner/manager) พนักงานดอนเมืองไม่มี profile ในระบบนี้เลย ต้องตัดสินใจก่อนว่าจะออกแบบยังไง (ให้ผู้จัดการเขาค้อกรอกแทนตอนสิ้นเดือน, หรือสร้างช่องทางแยกให้ frontdesk ดอนเมืองใช้)
 
 ## หมายเหตุสถาปัตยกรรม
 
