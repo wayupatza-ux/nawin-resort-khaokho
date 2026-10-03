@@ -25,10 +25,14 @@
 
     <section>
       <div class="cal-toolbar">
-        <button class="ghost" id="prevMonth">‹ 14 วันก่อน</button>
+        <button class="ghost" id="prevMonth">‹ ก่อนหน้า</button>
         <div class="cal-month-label" id="monthLabel"></div>
-        <button class="ghost" id="nextMonth">14 วันถัดไป ›</button>
+        <button class="ghost" id="nextMonth">ถัดไป ›</button>
         <button class="ghost" id="todayBtn">วันนี้</button>
+        <div class="cal-view-toggle" role="group" aria-label="มุมมองปฏิทิน">
+          <button type="button" class="ghost" data-view="15">15 วัน</button>
+          <button type="button" class="ghost" data-view="month">ทั้งเดือน</button>
+        </div>
       </div>
       <div class="cal-legend">
         <span><i class="cal-dot free"></i>ว่าง (คลิกเพื่อจอง)</span>
@@ -128,7 +132,13 @@
 
   let currentRows = [];
   let currentRole = null;
-  const CAL_WINDOW_DAYS = 14;
+  // Two calendar views: a rolling 15-day window starting at `cursor`, or the
+  // whole calendar month containing `cursor`. The choice is remembered per
+  // browser (localStorage may be unavailable, so it's best-effort).
+  const ROLLING_DAYS = 15;
+  const VIEW_KEY = "khaokho.calView";
+  let calView = "15";
+  try { if (localStorage.getItem(VIEW_KEY) === "month") calView = "month"; } catch { /* storage blocked */ }
   function startOfDay(d) {
     const n = new Date(d);
     n.setHours(0, 0, 0, 0);
@@ -136,21 +146,58 @@
   }
   let cursor = startOfDay(new Date());
 
+  // Returns { start, days } for the current view.
+  function calWindow() {
+    if (calView === "month") {
+      const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+      const days = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+      return { start, days };
+    }
+    return { start: new Date(cursor), days: ROLLING_DAYS };
+  }
+
+  function stepCalendar(dir) {
+    if (calView === "month") cursor = new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1);
+    else cursor.setDate(cursor.getDate() + dir * ROLLING_DAYS);
+    loadCalendar();
+  }
+
+  function syncViewButtons() {
+    document.querySelectorAll(".cal-view-toggle button").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.view === calView);
+      btn.setAttribute("aria-pressed", btn.dataset.view === calView);
+    });
+    const unit = calView === "month" ? "เดือน" : `${ROLLING_DAYS} วัน`;
+    document.getElementById("prevMonth").textContent = `‹ ${unit}ก่อน`;
+    document.getElementById("nextMonth").textContent = `${unit}ถัดไป ›`;
+  }
+
   document.getElementById("logoutBtn").addEventListener("click", logout);
   document.getElementById("applyFilter").addEventListener("click", loadList);
   document.getElementById("searchQuery").addEventListener("input", renderFilteredList);
-  document.getElementById("prevMonth").addEventListener("click", () => {
-    cursor.setDate(cursor.getDate() - CAL_WINDOW_DAYS);
-    loadCalendar();
-  });
-  document.getElementById("nextMonth").addEventListener("click", () => {
-    cursor.setDate(cursor.getDate() + CAL_WINDOW_DAYS);
-    loadCalendar();
-  });
+  document.getElementById("prevMonth").addEventListener("click", () => stepCalendar(-1));
+  document.getElementById("nextMonth").addEventListener("click", () => stepCalendar(1));
   document.getElementById("todayBtn").addEventListener("click", () => {
     cursor = startOfDay(new Date());
     loadCalendar();
   });
+  document.querySelectorAll(".cal-view-toggle button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.view === calView) return;
+      calView = btn.dataset.view;
+      try { localStorage.setItem(VIEW_KEY, calView); } catch { /* storage blocked */ }
+      // Switching month → 15 days starts from today if today is in the month
+      // being viewed, otherwise from the 1st of that month.
+      if (calView === "15") {
+        const today = startOfDay(new Date());
+        const sameMonth = today.getFullYear() === cursor.getFullYear() && today.getMonth() === cursor.getMonth();
+        cursor = sameMonth ? today : new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+      }
+      syncViewButtons();
+      loadCalendar();
+    });
+  });
+  syncViewButtons();
 
   function showMsg(text, kind = "error") {
     document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
@@ -192,13 +239,16 @@
   async function loadCalendar() {
     calWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
 
-    const windowStart = cursor;
-    const windowEnd = new Date(cursor);
-    windowEnd.setDate(windowEnd.getDate() + CAL_WINDOW_DAYS);
+    const { start: windowStart, days: windowDays } = calWindow();
+    const windowEnd = new Date(windowStart);
+    windowEnd.setDate(windowEnd.getDate() + windowDays);
     const lastDay = new Date(windowEnd);
     lastDay.setDate(lastDay.getDate() - 1);
     const fmtShort = (d) => d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-    monthLabel.textContent = `${fmtShort(windowStart)} – ${fmtShort(lastDay)}`;
+    monthLabel.textContent =
+      calView === "month"
+        ? windowStart.toLocaleDateString("th-TH", { month: "long", year: "numeric" })
+        : `${fmtShort(windowStart)} – ${fmtShort(lastDay)}`;
 
     const [unitsRes, bookingsRes] = await Promise.all([
       supabase.from("units").select("id, code, name").eq("is_active", true).order("code"),
@@ -216,7 +266,7 @@
       return;
     }
 
-    renderCalendar(unitsRes.data || [], bookingsRes.data || [], windowStart, CAL_WINDOW_DAYS);
+    renderCalendar(unitsRes.data || [], bookingsRes.data || [], windowStart, windowDays);
   }
 
   let calState = { days: [], bookings: [] };

@@ -303,3 +303,10 @@ td.cal-booking.dragging { opacity: 0.4; }
 .src-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: #e7e3db; color: var(--ink-soft); }
 .src-badge.agoda { background: #e3ecfb; color: #2255a3; }
 button.guest-link { background: none; border: 0; padding: 0; font: inherit; color: var(--forest-dark); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
+
+/* ---------- Calendar view toggle (15 วัน / ทั้งเดือน) ---------- */
+.cal-view-toggle { display: inline-flex; margin-left: auto; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.cal-view-toggle button { border: 0; border-radius: 0; padding: 6px 14px; font-size: 0.82rem; }
+.cal-view-toggle button + button { border-left: 1px solid var(--line); }
+.cal-view-toggle button.active { background: var(--forest-dark); color: #fff; }
+@media (max-width: 720px) { .cal-view-toggle { margin-left: 0; } }
