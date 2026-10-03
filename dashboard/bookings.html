@@ -107,6 +107,17 @@
     </div>
   </div>
 </div>
+<div class="modal-backdrop" id="detailBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <h3 id="detailTitle">รายละเอียดการจอง</h3>
+    <p class="modal-sub" id="detailSub"></p>
+    <dl class="detail-list" id="detailBody"></dl>
+    <div class="modal-actions">
+      <button class="ghost" id="detailResched" type="button">ย้ายวัน</button>
+      <button class="primary" id="detailClose" type="button">ปิด</button>
+    </div>
+  </div>
+</div>
 <script type="module">
   import { supabase, requireSession, logout, fmtDate, fmtBaht, STATUS_TH, gateOwnerOnlyNav } from "./assets/app.js";
 
@@ -160,6 +171,14 @@
     return guest.display_name || null;
   }
 
+  // Agoda/LINE bookings have no created_by, so "จองโดย" falls back to the
+  // booking's source instead of always saying the guest booked via LINE.
+  const SOURCE_TH = { agoda: "Agoda", liff: "แขกจองเอง (LINE)", "walk-in": "Walk-in / เพจ" };
+  function bookedByLabel(b) {
+    if (b.source === "agoda") return "Agoda";
+    return b.creator?.display_name ?? SOURCE_TH[b.source] ?? b.source ?? "-";
+  }
+
   // ---------- Calendar ----------
 
   function toISODate(d) {
@@ -185,7 +204,7 @@
       supabase.from("units").select("id, code, name").eq("is_active", true).order("code"),
       supabase
         .from("bookings")
-        .select("id, unit_id, check_in, check_out, status, booking_ref, guests(display_name, first_name, last_name)")
+        .select("id, unit_id, check_in, check_out, status, booking_ref, source, guests(display_name, first_name, last_name)")
         .in("status", ["pending", "confirmed", "checked_in", "checked_out"])
         .lt("check_in", toISODate(windowEnd))
         .gt("check_out", toISODate(windowStart)),
@@ -253,7 +272,7 @@
           // list table below.
           const guestFirstName = (b.guests?.first_name || b.guests?.display_name || "แขก").split(/\s+/)[0];
           const movable = DRAGGABLE.includes(b.status);
-          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}${movable ? " movable" : ""}" colspan="${span}" data-booking="${b.id}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}${movable ? " · ลากเพื่อย้ายวัน" : ""}">${escapeHtml(guestFirstName)}</td>`;
+          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}${movable ? " movable" : ""}" colspan="${span}" data-booking="${b.id}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}${b.source === "agoda" ? " · Agoda" : ""} · คลิกดูรายละเอียด${movable ? " · ลากเพื่อย้ายวัน" : ""}">${escapeHtml(guestFirstName)}</td>`;
           i += span;
         } else {
           const isToday = d.iso === todayISO;
@@ -268,6 +287,11 @@
 
     calWrap.querySelectorAll("td.cal-booking.movable").forEach((cell) => {
       cell.addEventListener("pointerdown", (e) => startCalDrag(e, cell));
+    });
+    // Movable cells open details from startCalDrag's pointerup (a click
+    // without a drag); the rest (checked-in/out) just use a plain click.
+    calWrap.querySelectorAll("td.cal-booking:not(.movable)").forEach((cell) => {
+      cell.addEventListener("click", () => openDetail(cell.dataset.booking));
     });
     calWrap.querySelectorAll("td.cal-cell.free").forEach((cell) => {
       cell.addEventListener("click", () => {
@@ -287,14 +311,14 @@
     const options = data
       .map((p) => `<option value="${p.id}">${escapeHtml(p.display_name || p.role)}</option>`)
       .join("");
-    sel.innerHTML = `<option value="">ทั้งหมด</option><option value="__self__">แขกจองเอง (LINE)</option>${options}`;
+    sel.innerHTML = `<option value="">ทั้งหมด</option><option value="__agoda__">Agoda</option><option value="__self__">แขกจองเอง (LINE)</option>${options}`;
   }
 
   async function loadList() {
     tableWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     let query = supabase
       .from("bookings")
-      .select("id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, guests(display_name, first_name, last_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)")
+      .select(BOOKING_SELECT)
       .order("check_in", { ascending: false })
       .limit(200);
 
@@ -305,7 +329,8 @@
     if (status) query = query.eq("status", status);
     if (from) query = query.gte("check_in", from);
     if (to) query = query.lte("check_in", to);
-    if (createdBy === "__self__") query = query.is("created_by", null);
+    if (createdBy === "__agoda__") query = query.eq("source", "agoda");
+    else if (createdBy === "__self__") query = query.is("created_by", null).eq("source", "liff");
     else if (createdBy) query = query.eq("created_by", createdBy);
 
     const { data, error } = await query;
@@ -349,12 +374,12 @@
             <tr>
               <td>${escapeHtml(b.booking_ref)}</td>
               <td>${escapeHtml(b.units?.name ?? "-")}</td>
-              <td>${escapeHtml(guestDisplayName(b.guests) ?? "-")}${b.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}</td>
+              <td><button type="button" class="guest-link" data-id="${b.id}" title="ดูรายละเอียดการจอง">${escapeHtml(guestDisplayName(b.guests) ?? "-")}</button>${b.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}</td>
               <td>${fmtDate(b.check_in)}</td>
               <td>${fmtDate(b.check_out)}</td>
               <td>${b.num_guests}</td>
               <td>${fmtBaht(b.total_amount)}</td>
-              <td>${escapeHtml(b.creator?.display_name ?? "แขกจองเอง (LINE)")}</td>
+              <td>${b.source === "agoda" ? `<span class="src-badge agoda">Agoda</span>` : escapeHtml(bookedByLabel(b))}</td>
               <td>
                 <select class="status-select" data-id="${b.id}" data-current="${b.status}">
                   ${STATUSES.map((s) => `<option value="${s}" ${s === b.status ? "selected" : ""}>${STATUS_TH[s]}</option>`).join("")}
@@ -379,6 +404,9 @@
 
     tableWrap.querySelectorAll("select.status-select").forEach((sel) => {
       sel.addEventListener("change", () => updateStatus(sel));
+    });
+    tableWrap.querySelectorAll(".guest-link").forEach((btn) => {
+      btn.addEventListener("click", () => openDetail(btn.dataset.id));
     });
     tableWrap.querySelectorAll(".resched-btn").forEach((btn) => {
       btn.addEventListener("click", () => openReschedule(btn.dataset.id));
@@ -518,8 +546,9 @@
     };
     const onUp = () => {
       cleanup();
+      if (!st.moved) return openDetail(b.id); // plain click, not a drag
       const t = st.target;
-      if (!st.moved || !t) return;
+      if (!t) return;
       if (t.unitId === b.unit_id && t.cin === b.check_in) return; // dropped where it started
       if (t.conflict) return showMsg("ห้องไม่ว่างในช่วงวันที่นั้น (ชนกับการจองอื่น)");
       openReschedule(b.id, { unitId: t.unitId, cin: t.cin, cout: t.cout });
@@ -545,7 +574,7 @@
   let reschedSeq = 0; // guards against out-of-order async responses
 
   const BOOKING_SELECT =
-    "id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, guests(display_name, first_name, last_name, phone), units(name), creator:profiles!bookings_created_by_fkey(display_name)";
+    "id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, source, external_ref, breakfast_included, created_at, guests(display_name, first_name, last_name, phone, email, nationality), units(name), creator:profiles!bookings_created_by_fkey(display_name)";
 
   // The list is filtered/limited, so a booking dragged from the calendar may
   // not be in currentRows — fall back to fetching it by id.
@@ -677,6 +706,62 @@
   rConfirm.addEventListener("click", confirmReschedule);
   bd.addEventListener("click", (e) => { if (e.target === bd) closeReschedule(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !bd.hidden) closeReschedule(); });
+
+  // ---------- Booking detail (คลิกชื่อแขก) ----------
+
+  const detailBd = document.getElementById("detailBackdrop");
+  const detailResched = document.getElementById("detailResched");
+  let detailId = null;
+
+  async function openDetail(id) {
+    const b = await findBooking(id);
+    if (!b) return showMsg("ไม่พบการจองนี้");
+    detailId = b.id;
+    const g = b.guests || {};
+    const nights = diffDays(b.check_in, b.check_out);
+    const isAgoda = b.source === "agoda";
+    const agodaId = isAgoda && b.external_ref ? b.external_ref.split("#")[0] : null;
+    const created = b.created_at
+      ? new Date(b.created_at).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "-";
+    const rows = [
+      ["ชื่อแขก", escapeHtml(guestDisplayName(g) ?? "-")],
+      ["เบอร์โทร", g.phone ? `<a href="tel:${escapeHtml(g.phone.replace(/\s+/g, ""))}">${escapeHtml(g.phone)}</a>` : "-"],
+      g.email ? ["อีเมล", escapeHtml(g.email)] : null,
+      ["ห้อง", escapeHtml(b.units?.name ?? "-")],
+      ["เช็คอิน", fmtDate(b.check_in)],
+      ["เช็คเอาท์", fmtDate(b.check_out)],
+      ["จำนวนคืน", `${nights} คืน`],
+      ["จำนวนผู้เข้าพัก", `${b.num_guests} คน`],
+      ["อาหารเช้า", b.breakfast_included ? "✅ รวมอาหารเช้า" : "❌ ไม่รวมอาหารเช้า"],
+      [isAgoda ? "ยอดสุทธิที่ได้รับ" : "ยอดเงิน", fmtBaht(b.total_amount) + (isAgoda ? ` <span class="src-badge">หลังหักค่าคอม Agoda</span>` : "")],
+      ["จองโดย", isAgoda ? `<span class="src-badge agoda">Agoda</span>` : escapeHtml(bookedByLabel(b))],
+      agodaId ? ["เลขจอง Agoda", escapeHtml(agodaId)] : null,
+      ["สถานะ", STATUS_TH[b.status] ?? b.status],
+      ["บันทึกเมื่อ", created],
+      b.notes ? ["หมายเหตุ", `<span>${escapeHtml(b.notes)}</span>`] : null,
+    ].filter(Boolean);
+    document.getElementById("detailSub").textContent = `เลขที่จอง ${b.booking_ref}`;
+    document.getElementById("detailBody").innerHTML = rows
+      .map(([k, v]) => `<dt>${k}</dt><dd${k === "หมายเหตุ" ? ' class="notes"' : ""}>${v}</dd>`)
+      .join("");
+    detailResched.hidden = !RESCHEDULABLE.includes(b.status);
+    detailBd.hidden = false;
+  }
+
+  function closeDetail() {
+    detailBd.hidden = true;
+    detailId = null;
+  }
+
+  document.getElementById("detailClose").addEventListener("click", closeDetail);
+  detailResched.addEventListener("click", () => {
+    const id = detailId;
+    closeDetail();
+    if (id) openReschedule(id);
+  });
+  detailBd.addEventListener("click", (e) => { if (e.target === detailBd) closeDetail(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !detailBd.hidden) closeDetail(); });
 
   async function init() {
     const session = await requireSession();
