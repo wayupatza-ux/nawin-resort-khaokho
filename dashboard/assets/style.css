@@ -310,3 +310,12 @@ button.guest-link { background: none; border: 0; padding: 0; font: inherit; colo
 .cal-view-toggle button + button { border-left: 1px solid var(--line); }
 .cal-view-toggle button.active { background: var(--forest-dark); color: #fff; }
 @media (max-width: 720px) { .cal-view-toggle { margin-left: 0; } }
+
+/* ---------- Monthly report (units.html) ---------- */
+.report-month { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.report-month input[type="month"] { width: auto; }
+.report-note { color: var(--ink-soft); font-size: 0.8rem; margin: 4px 0 14px; }
+tr.total-row td { font-weight: 700; border-top: 2px solid var(--line); }
+.commission-detail { margin-top: 10px; font-size: 0.85rem; }
+.commission-detail summary { cursor: pointer; color: var(--forest-dark); font-weight: 600; margin-bottom: 8px; }
+#commissionWrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
