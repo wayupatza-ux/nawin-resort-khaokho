@@ -354,10 +354,12 @@
 
   // ---------- Booking list ----------
 
+  let staffList = [];
   async function loadCreatedByOptions() {
     const sel = document.getElementById("filterCreatedBy");
     const { data, error } = await supabase.from("profiles").select("id, display_name, role").order("display_name");
     if (error || !data) return;
+    staffList = data;
     const options = data
       .map((p) => `<option value="${p.id}">${escapeHtml(p.display_name || p.role)}</option>`)
       .join("");
@@ -791,12 +793,42 @@
       ["บันทึกเมื่อ", created],
       b.notes ? ["หมายเหตุ", `<span>${escapeHtml(b.notes)}</span>`] : null,
     ].filter(Boolean);
+    const history = await loadStatusHistory(b.id);
+    if (history) rows.push(["ประวัติสถานะ", history]);
     document.getElementById("detailSub").textContent = `เลขที่จอง ${b.booking_ref}`;
     document.getElementById("detailBody").innerHTML = rows
       .map(([k, v]) => `<dt>${k}</dt><dd${k === "หมายเหตุ" ? ' class="notes"' : ""}>${v}</dd>`)
       .join("");
     detailResched.hidden = !RESCHEDULABLE.includes(b.status);
     detailBd.hidden = false;
+  }
+
+  // Who changed the status and when (booking_status_history, filled by a DB
+  // trigger). System changes carry an `actor` such as the 24h auto-cancel.
+  const ACTOR_TH = {
+    "agoda-sync": "ระบบ Agoda",
+    "line-guest": "แขก/ระบบ LINE",
+    "system": "ระบบ",
+  };
+  async function loadStatusHistory(bookingId) {
+    const { data, error } = await supabase
+      .from("booking_status_history")
+      .select("old_status, new_status, changed_by, changed_at, actor")
+      .eq("booking_id", bookingId)
+      .order("changed_at");
+    if (error || !data?.length) return null;
+    const names = new Map(staffList.map((p) => [p.id, p.display_name]));
+    return data
+      .map((h) => {
+        const when = new Date(h.changed_at).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        const from = h.old_status ? `${STATUS_TH[h.old_status] ?? h.old_status} → ` : "สร้าง → ";
+        const to = STATUS_TH[h.new_status] ?? h.new_status ?? "-";
+        const who = h.changed_by
+          ? names.get(h.changed_by) ?? "พนักงาน"
+          : ACTOR_TH[h.actor] ?? h.actor ?? "ระบบ";
+        return `<div class="status-history-row">${escapeHtml(when)} · ${escapeHtml(from + to)} · <b>${escapeHtml(who)}</b></div>`;
+      })
+      .join("");
   }
 
   function closeDetail() {

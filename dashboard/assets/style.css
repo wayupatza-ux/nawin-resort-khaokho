@@ -299,6 +299,8 @@ td.cal-booking.dragging { opacity: 0.4; }
 .detail-list { display: grid; grid-template-columns: max-content 1fr; gap: 7px 14px; margin: 0; font-size: 0.9rem; }
 .detail-list dt { color: var(--ink-soft); font-size: 0.8rem; padding-top: 1px; }
 .detail-list dd { margin: 0; font-weight: 600; word-break: break-word; }
+.status-history-row { font-weight: 400; font-size: 0.8rem; line-height: 1.5; }
+.status-history-row b { font-weight: 600; }
 .detail-list dd.notes { font-weight: 400; white-space: pre-wrap; font-size: 0.82rem; }
 .src-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: #e7e3db; color: var(--ink-soft); }
 .src-badge.agoda { background: #e3ecfb; color: #2255a3; }
