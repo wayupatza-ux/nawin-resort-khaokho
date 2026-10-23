@@ -1,6 +1,7 @@
 -- 1) The 24h unpaid auto-cancel (0012) cancelled every pending booking,
 --    including ones staff/owner keyed in by hand (3YTVHQ, บอสตอง's friend,
---    agreed to pay on the 26th — auto-cancelled 22 Oct 2026 12:30). Only guest
+--    agreed to pay on the 26th — auto-cancelled 22 Oct 2026 12:30; re-keyed as
+--    Q5L9SN). Only guest
 --    self-bookings from LINE should expire; staff-entered bookings stay pending
 --    until someone changes them.
 -- 2) booking_status_history already logs every transition, but only with
@@ -89,11 +90,4 @@ $$;
 
 revoke all on function public.cancel_expired_pending_bookings() from public, anon, authenticated;
 
--- Restore บอสตอง's friend's booking that the old job wrongly cancelled.
-do $$
-begin
-  perform set_config('app.actor', 'restore: wrongly auto-cancelled (บอสตอง)', true);
-  update public.bookings set status = 'pending'
-  where booking_ref = '3YTVHQ' and status = 'cancelled';
-end;
-$$;
+-- 3YTVHQ is NOT restored: บอสตอง had it re-keyed as Q5L9SN (confirmed, paid) on 23 Oct 2026.
