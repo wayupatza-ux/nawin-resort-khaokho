@@ -75,19 +75,12 @@
             <label>ยอดที่ได้รับ (บาท)</label>
             <input type="number" id="paidAmount" min="0" step="0.01" placeholder="ยังไม่ได้รับ = เว้นว่าง" />
           </div>
-          <div class="field">
-            <label>ช่องทาง</label>
-            <select id="paidMethod">
-              <option value="transfer">โอน / สแกน QR</option>
-              <option value="cash">เงินสด</option>
-            </select>
-          </div>
         </div>
-        <div class="field" id="paidSlipField">
-          <label>สลิปโอนเงิน (ต้องแนบเมื่อเป็นการโอน)</label>
+        <div class="field">
+          <label>สลิปโอนเงิน (ต้องแนบ)</label>
           <input type="file" id="paidSlip" accept="image/*" />
         </div>
-        <div class="pay-now-hint">ยังไม่ได้รับเงิน → เว้นว่าง การจองจะเป็น "รอยืนยัน" และระบบจะเตือนทุกคืน · ได้รับมัดจำ ≥ 50% หรือเต็มจำนวน → การจองเป็น "ยืนยันแล้ว"</div>
+        <div class="pay-now-hint">รับเฉพาะเงินโอนเข้าบัญชีรีสอร์ท (ไม่รับเงินสด) · ยังไม่ได้รับเงิน → เว้นว่าง การจองจะเป็น "รอยืนยัน" และระบบจะเตือนทุกคืน · ได้รับมัดจำ ≥ 50% หรือเต็มจำนวน → การจองเป็น "ยืนยันแล้ว"</div>
       </fieldset>
       <button type="submit" class="primary" id="submitBtn">บันทึกการจอง</button>
     </form>
@@ -307,10 +300,10 @@
     }
     if (Number(totalAmount) <= 0) return showMsg("กรอกยอดรวมให้ถูกต้อง");
     const paidAmount = Number(document.getElementById("paidAmount").value) || 0;
-    const paidMethod = document.getElementById("paidMethod").value;
+    const paidMethod = "transfer"; // no cash — everything is transferred to the resort account
     const paidSlip = document.getElementById("paidSlip").files[0] || null;
     if (paidAmount < 0 || paidAmount > Number(totalAmount)) return showMsg("ยอดที่ได้รับต้องไม่เกินยอดรวม");
-    if (paidAmount > 0 && paidMethod === "transfer" && !paidSlip) return showMsg("แนบสลิปโอนเงินด้วย (หรือเลือก \"เงินสด\")");
+    if (paidAmount > 0 && !paidSlip) return showMsg("แนบสลิปโอนเงินด้วย");
 
     btn.disabled = true;
     btn.textContent = "กำลังบันทึก...";
@@ -372,7 +365,6 @@
 
       showMsg(`บันทึกการจองสำเร็จ · ${statusMsg}`, "success");
       document.getElementById("form").reset();
-      document.getElementById("paidSlipField").hidden = false;
       totalTouchedByUser = false;
       document.getElementById("priceHint").textContent = "";
       renderPaymentQR({
@@ -394,9 +386,6 @@
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
 
-  document.getElementById("paidMethod").addEventListener("change", (e) => {
-    document.getElementById("paidSlipField").hidden = e.target.value === "cash";
-  });
   document.getElementById("unitId").addEventListener("change", recalcPrice);
   document.getElementById("checkIn").addEventListener("change", recalcPrice);
   document.getElementById("checkOut").addEventListener("change", recalcPrice);

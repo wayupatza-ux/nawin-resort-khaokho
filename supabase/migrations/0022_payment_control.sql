@@ -10,8 +10,9 @@
 --   * pending → confirmed / checked_in needs recorded payments ≥ 50% of the
 --     total (a deposit); → checked_out needs the full total
 --   * staff can't lower a booking's total_amount (owner only)
---   * payments: staff can add (bank transfer needs a slip) but can't edit,
---     delete or verify them — only the owner verifies
+--   * payments: staff can add them — always with the transfer slip, the
+--     resort takes no cash, everything is paid into one bank account — but
+--     can't edit, delete or verify them; only the owner verifies
 -- Revenue and commission (dashboard/units.html) count owner-verified money.
 -- Requires 0021 (status audit actor) to be applied first.
 
@@ -20,12 +21,6 @@
 alter table public.payments
   add column if not exists recorded_by uuid references public.profiles(id) default auth.uid(),
   add column if not exists created_at timestamptz not null default now();
-
--- Transfers must come with a slip. NOT VALID: don't re-check old rows.
-alter table public.payments drop constraint if exists payments_transfer_needs_slip;
-alter table public.payments
-  add constraint payments_transfer_needs_slip
-  check (coalesce(method, '') not in ('transfer', 'promptpay') or slip_url is not null) not valid;
 
 drop policy if exists payments_staff_all on public.payments;
 drop policy if exists payments_staff_select on public.payments;
@@ -40,6 +35,7 @@ create policy payments_staff_insert on public.payments
     and verified = false
     and verified_by is null
     and recorded_by = auth.uid()
+    and slip_url is not null
   );
 create policy payments_owner_all on public.payments
   for all using (public.is_owner()) with check (public.is_owner());

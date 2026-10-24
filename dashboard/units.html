@@ -195,7 +195,7 @@
   function commissionBlocker(b) {
     if (b.status !== "checked_out") return "ยังไม่เช็คเอาท์";
     if (b.pay.paid < b.pay.total) return `ยังไม่ได้รับเงินครบ (ค้าง ${fmtBaht(b.pay.outstanding)})`;
-    if (b.pay.verified < b.pay.total) return "รอเจ้าของตรวจสลิป/เงินสด";
+    if (b.pay.verified < b.pay.total) return "รอเจ้าของตรวจสลิป";
     return null;
   }
 
