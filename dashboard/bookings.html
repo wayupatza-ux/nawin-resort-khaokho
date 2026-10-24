@@ -115,11 +115,10 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
     <h3 id="detailTitle">รายละเอียดการจอง</h3>
     <p class="modal-sub" id="detailSub"></p>
+    <div class="status-quick" id="detailStatusQuick" role="group" aria-label="เปลี่ยนสถานะ"></div>
     <dl class="detail-list" id="detailBody"></dl>
     <div class="modal-actions">
       <button class="ghost" id="detailResched" type="button">ย้ายวัน</button>
-      <button class="ghost status-step" id="detailCheckIn" type="button" hidden>✅ เช็คอินแล้ว</button>
-      <button class="ghost status-step" id="detailCheckOut" type="button" hidden>🏁 เช็คเอาท์แล้ว</button>
       <button class="primary" id="detailClose" type="button">ปิด</button>
     </div>
   </div>
@@ -238,6 +237,8 @@
     return d.toLocaleDateString("th-TH", { weekday: "short" });
   }
 
+  const STATUS_ICON = { checked_in: "✅ ", checked_out: "🏁 " };
+
   async function loadCalendar() {
     calWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
 
@@ -324,7 +325,7 @@
           // list table below.
           const guestFirstName = (b.guests?.first_name || b.guests?.display_name || "แขก").split(/\s+/)[0];
           const movable = DRAGGABLE.includes(b.status);
-          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}${movable ? " movable" : ""}" colspan="${span}" data-booking="${b.id}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}${b.source === "agoda" ? " · Agoda" : ""} · คลิกดูรายละเอียด${movable ? " · ลากเพื่อย้ายวัน" : ""}">${escapeHtml(guestFirstName)}</td>`;
+          html += `<td class="cal-cell cal-booking ${b.status}${spanIncludesToday ? " today" : ""}${movable ? " movable" : ""}" colspan="${span}" data-booking="${b.id}" title="${escapeHtml(guestName)} · ${STATUS_TH[b.status]} · ${escapeHtml(b.booking_ref)}${b.source === "agoda" ? " · Agoda" : ""} · คลิกเพื่อเปลี่ยนสถานะ/ดูรายละเอียด${movable ? " · ลากเพื่อย้ายวัน" : ""}">${STATUS_ICON[b.status] ?? ""}${escapeHtml(guestFirstName)}</td>`;
           i += span;
         } else {
           const isToday = d.iso === todayISO;
@@ -802,22 +803,41 @@
       .map(([k, v]) => `<dt>${k}</dt><dd${k === "หมายเหตุ" ? ' class="notes"' : ""}>${v}</dd>`)
       .join("");
     detailResched.hidden = !RESCHEDULABLE.includes(b.status);
-    detailCheckIn.hidden = !["pending", "confirmed"].includes(b.status);
-    detailCheckOut.hidden = b.status !== "checked_in";
+    renderStatusQuick(b.status);
     detailBd.hidden = false;
   }
 
-  // One-tap status steps from the detail popup (opened from the calendar or
-  // the list): confirmed/pending → เช็คอินแล้ว, เช็คอินแล้ว → เช็คเอาท์แล้ว.
-  const detailCheckIn = document.getElementById("detailCheckIn");
-  const detailCheckOut = document.getElementById("detailCheckOut");
-  async function stepStatus(newStatus, btn) {
+  // One-tap status buttons at the top of the detail popup (opened by clicking
+  // a guest on the calendar or in the list). Cancel / no-show stay in the
+  // list's dropdown so they can't be hit by accident here.
+  const QUICK_STATUSES = [
+    ["pending", "⏳ รอยืนยัน"],
+    ["confirmed", "👍 ยืนยันแล้ว"],
+    ["checked_in", "✅ เช็คอินแล้ว"],
+    ["checked_out", "🏁 เช็คเอาท์แล้ว"],
+  ];
+  const statusQuick = document.getElementById("detailStatusQuick");
+  function renderStatusQuick(current) {
+    const known = QUICK_STATUSES.some(([s]) => s === current);
+    statusQuick.hidden = !known;
+    statusQuick.innerHTML = QUICK_STATUSES.map(([s, label]) =>
+      `<button type="button" class="status-chip ${s}${s === current ? " active" : ""}" data-status="${s}"${s === current ? ' aria-pressed="true"' : ""}>${label}</button>`
+    ).join("");
+    statusQuick.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.status !== current) setDetailStatus(btn.dataset.status);
+      });
+    });
+  }
+  async function setDetailStatus(newStatus) {
     const id = detailId;
     if (!id) return;
-    btn.disabled = true;
+    statusQuick.querySelectorAll("button").forEach((b) => (b.disabled = true));
     const { error } = await supabase.from("bookings").update({ status: newStatus }).eq("id", id);
-    btn.disabled = false;
-    if (error) return showMsg("อัปเดตสถานะไม่สำเร็จ: " + error.message);
+    if (error) {
+      statusQuick.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      return showMsg("อัปเดตสถานะไม่สำเร็จ: " + error.message);
+    }
     const row = currentRows.find((b) => b.id === id);
     if (row) row.status = newStatus;
     renderFilteredList();
@@ -825,8 +845,6 @@
     showMsg(`อัปเดตเป็น "${STATUS_TH[newStatus]}" แล้ว`, "success");
     openDetail(id);
   }
-  detailCheckIn.addEventListener("click", () => stepStatus("checked_in", detailCheckIn));
-  detailCheckOut.addEventListener("click", () => stepStatus("checked_out", detailCheckOut));
 
   // Who changed the status and when (booking_status_history, filled by a DB
   // trigger). System changes carry an `actor` such as the 24h auto-cancel.

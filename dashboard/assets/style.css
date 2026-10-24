@@ -321,3 +321,13 @@ tr.total-row td { font-weight: 700; border-top: 2px solid var(--line); }
 .commission-detail { margin-top: 10px; font-size: 0.85rem; }
 .commission-detail summary { cursor: pointer; color: var(--forest-dark); font-weight: 600; margin-bottom: 8px; }
 #commissionWrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* one-tap status buttons in the booking detail popup */
+.status-quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.status-chip { flex: 1 1 auto; min-height: 40px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line, #e2dccf); background: var(--paper, #fff); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.status-chip:disabled { opacity: 0.6; cursor: wait; }
+.status-chip.active { font-weight: 700; border-color: currentColor; cursor: default; }
+.status-chip.pending.active { background: #fdeecb; color: #8a5a00; }
+.status-chip.confirmed.active { background: #dcefe1; color: var(--ok); }
+.status-chip.checked_in.active { background: #dce9f5; color: #2255a3; }
+.status-chip.checked_out.active { background: #e7e3db; color: var(--ink-soft); }
