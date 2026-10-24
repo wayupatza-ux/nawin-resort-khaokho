@@ -252,7 +252,7 @@
         breakfastIncluded,
         totalAmount: totalAmount || undefined,
       });
-      showMsg(`บันทึกสำเร็จ! เลขที่จอง ${booking.booking_ref}`, "success");
+      showMsg(`บันทึกสำเร็จ! เลขที่จอง ${booking.booking_ref} — สถานะ "รอยืนยัน" จนกว่าจะบันทึกการชำระเงิน (แนบสลิป) ในหน้า Dashboard`, "success");
       document.getElementById("guestName").value = "";
       document.getElementById("guestPhone").value = "";
       document.getElementById("notes").value = "";

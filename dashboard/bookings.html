@@ -116,7 +116,9 @@
     <h3 id="detailTitle">รายละเอียดการจอง</h3>
     <p class="modal-sub" id="detailSub"></p>
     <div class="status-quick" id="detailStatusQuick" role="group" aria-label="เปลี่ยนสถานะ"></div>
+    <div id="detailMsg"></div>
     <dl class="detail-list" id="detailBody"></dl>
+    <div class="pay-section" id="detailPay"></div>
     <div class="modal-actions">
       <button class="ghost" id="detailResched" type="button">ย้ายวัน</button>
       <button class="primary" id="detailClose" type="button">ปิด</button>
@@ -125,6 +127,7 @@
 </div>
 <script type="module">
   import { supabase, requireSession, logout, fmtDate, fmtBaht, STATUS_TH, gateOwnerOnlyNav } from "./assets/app.js";
+  import { METHOD_TH, PAYMENT_BADGE, paymentSummary, recordPayment } from "./assets/payments.js";
 
   const tableWrap = document.getElementById("tableWrap");
   const calWrap = document.getElementById("calWrap");
@@ -201,8 +204,12 @@
   syncViewButtons();
 
   function showMsg(text, kind = "error") {
-    document.getElementById("msgBox").innerHTML = `<div class="msg ${kind}">${text}</div>`;
-    setTimeout(() => (document.getElementById("msgBox").innerHTML = ""), 3000);
+    // While the detail popup is open the page banner is hidden behind it,
+    // so show the message inside the popup (errors stay until next action).
+    const popupOpen = !document.getElementById("detailBackdrop").hidden;
+    const box = document.getElementById(popupOpen ? "detailMsg" : "msgBox");
+    box.innerHTML = `<div class="msg ${kind}">${text}</div>`;
+    if (kind !== "error" || !popupOpen) setTimeout(() => (box.innerHTML = ""), kind === "error" ? 6000 : 3000);
   }
 
   function escapeHtml(s) {
@@ -433,7 +440,7 @@
               <td>${fmtDate(b.check_in)}</td>
               <td>${fmtDate(b.check_out)}</td>
               <td>${b.num_guests}</td>
-              <td>${fmtBaht(b.total_amount)}</td>
+              <td>${fmtBaht(b.total_amount)}${payBadge(b)}</td>
               <td>${b.source === "agoda" ? `<span class="src-badge agoda">Agoda</span>` : escapeHtml(bookedByLabel(b))}</td>
               <td>
                 <select class="status-select" data-id="${b.id}" data-current="${b.status}">
@@ -469,6 +476,15 @@
     tableWrap.querySelectorAll(".delete-booking-btn").forEach((btn) => {
       btn.addEventListener("click", () => deleteBooking(btn));
     });
+  }
+
+  function payBadge(b) {
+    if (["cancelled", "no_show"].includes(b.status)) return "";
+    const sum = paymentSummary(b, b.payments);
+    if (sum.state === "ota") return "";
+    const [cls, label] = PAYMENT_BADGE[sum.state];
+    const extra = sum.state === "partial" ? ` ${fmtBaht(sum.paid)}` : "";
+    return `<br><span class="pay-badge ${cls}">${label}${extra}</span>`;
   }
 
   async function deleteBooking(btn) {
@@ -629,7 +645,7 @@
   let reschedSeq = 0; // guards against out-of-order async responses
 
   const BOOKING_SELECT =
-    "id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, source, external_ref, breakfast_included, created_at, guests(display_name, first_name, last_name, phone, email, nationality), units(name), creator:profiles!bookings_created_by_fkey(display_name)";
+    "id, booking_ref, unit_id, check_in, check_out, num_guests, status, total_amount, notes, source, external_ref, breakfast_included, created_at, guests(display_name, first_name, last_name, phone, email, nationality), units(name), creator:profiles!bookings_created_by_fkey(display_name), payments(id, amount, method, verified, slip_url, paid_at, note)";
 
   // The list is filtered/limited, so a booking dragged from the calendar may
   // not be in currentRows — fall back to fetching it by id.
@@ -771,6 +787,7 @@
   async function openDetail(id) {
     const b = await findBooking(id);
     if (!b) return showMsg("ไม่พบการจองนี้");
+    if (detailId !== b.id) document.getElementById("detailMsg").innerHTML = "";
     detailId = b.id;
     const g = b.guests || {};
     const nights = diffDays(b.check_in, b.check_out);
@@ -803,6 +820,7 @@
       .join("");
     detailResched.hidden = !RESCHEDULABLE.includes(b.status);
     renderStatusQuick(b.status);
+    renderPaySection(b);
     detailBd.hidden = false;
     // History loads after the popup is already on screen.
     const history = await loadStatusHistory(b.id);
@@ -831,6 +849,105 @@
       });
     });
   }
+  // ---------- Payments in the detail popup ----------
+  const payWrap = document.getElementById("detailPay");
+  function renderPaySection(b) {
+    const sum = paymentSummary(b, b.payments);
+    if (sum.state === "ota") {
+      payWrap.innerHTML = "";
+      return;
+    }
+    const rows = (b.payments || [])
+      .slice()
+      .sort((x, y) => (x.paid_at < y.paid_at ? -1 : 1))
+      .map((p) => {
+        const when = new Date(p.paid_at).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        const verify = p.verified
+          ? `<span class="pay-badge paid">✔ เจ้าของตรวจแล้ว</span>`
+          : currentRole === "owner"
+            ? `<button type="button" class="ghost pay-verify" data-id="${p.id}">ตรวจแล้ว ✔</button>`
+            : `<span class="pay-badge partial">รอเจ้าของตรวจ</span>`;
+        const slip = p.slip_url ? ` · <a href="#" class="pay-slip" data-path="${escapeHtml(p.slip_url)}">ดูสลิป</a>` : "";
+        return `<div class="pay-row">${escapeHtml(when)} · <b>${fmtBaht(p.amount)}</b> ${escapeHtml(METHOD_TH[p.method] ?? p.method ?? "")}${slip} ${verify}${p.note ? `<div class="pay-note">${escapeHtml(p.note)}</div>` : ""}</div>`;
+      })
+      .join("");
+    const [cls, label] = PAYMENT_BADGE[sum.state];
+    const canRecord = !["cancelled", "no_show"].includes(b.status) && sum.outstanding > 0;
+    payWrap.innerHTML = `
+      <div class="pay-head">การชำระเงิน <span class="pay-badge ${cls}">${label}</span>
+        <span class="pay-sub">รับแล้ว ${fmtBaht(sum.paid)} / ${fmtBaht(sum.total)}${sum.outstanding ? ` · ค้าง ${fmtBaht(sum.outstanding)}` : ""}</span></div>
+      ${rows || `<div class="pay-row muted">ยังไม่มีการบันทึกการชำระเงิน</div>`}
+      ${canRecord ? `
+      <details class="pay-form"${sum.state === "unpaid" ? " open" : ""}>
+        <summary>+ บันทึกการชำระเงิน</summary>
+        <div class="row">
+          <div class="field"><label>ยอด (บาท)</label><input type="number" id="payAmount" min="1" step="0.01" value="${sum.outstanding}" /></div>
+          <div class="field"><label>ช่องทาง</label>
+            <select id="payMethod"><option value="transfer">โอน / สแกน QR</option><option value="cash">เงินสด</option></select></div>
+        </div>
+        <div class="field" id="paySlipField"><label>สลิปโอนเงิน</label><input type="file" id="paySlip" accept="image/*" /></div>
+        <button type="button" class="primary" id="paySave">บันทึก</button>
+      </details>` : ""}`;
+
+    payWrap.querySelectorAll(".pay-slip").forEach((a) =>
+      a.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const { data } = await supabase.storage.from("payment-slips").createSignedUrl(a.dataset.path, 300);
+        if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+        else showMsg("เปิดสลิปไม่ได้");
+      }),
+    );
+    payWrap.querySelectorAll(".pay-verify").forEach((btn) =>
+      btn.addEventListener("click", () => verifyPayment(btn.dataset.id, b.id)),
+    );
+    const method = document.getElementById("payMethod");
+    if (method) {
+      method.addEventListener("change", () => (document.getElementById("paySlipField").hidden = method.value === "cash"));
+      document.getElementById("paySave").addEventListener("click", () => savePayment(b));
+    }
+  }
+
+  async function savePayment(b) {
+    const amount = Number(document.getElementById("payAmount").value) || 0;
+    const method = document.getElementById("payMethod").value;
+    const file = document.getElementById("paySlip").files[0] || null;
+    if (amount <= 0) return showMsg("กรอกยอดเงินที่ได้รับ");
+    if (method === "transfer" && !file) return showMsg("แนบสลิปโอนเงินด้วย (หรือเลือก \"เงินสด\")");
+    const btn = document.getElementById("paySave");
+    btn.disabled = true;
+    try {
+      const confirmed = await recordPayment(supabase, b.id, { amount, method, file, total: Number(b.total_amount) });
+      showMsg(confirmed ? `บันทึก ${fmtBaht(amount)} แล้ว — การจองเปลี่ยนเป็น "ยืนยันแล้ว"` : `บันทึก ${fmtBaht(amount)} แล้ว`, "success");
+    } catch (e) {
+      btn.disabled = false;
+      return showMsg("บันทึกการชำระเงินไม่สำเร็จ: " + e.message);
+    }
+    await refreshBooking(b.id);
+  }
+
+  async function verifyPayment(paymentId, bookingId) {
+    const session = await requireSession();
+    const { error } = await supabase
+      .from("payments")
+      .update({ verified: true, verified_by: session.user.id, verified_at: new Date().toISOString() })
+      .eq("id", paymentId);
+    if (error) return showMsg("ตรวจไม่สำเร็จ: " + error.message);
+    await refreshBooking(bookingId);
+  }
+
+  // Re-read one booking (with payments) into the list, then redraw.
+  async function refreshBooking(id) {
+    const { data } = await supabase.from("bookings").select(BOOKING_SELECT).eq("id", id).maybeSingle();
+    if (data) {
+      const i = currentRows.findIndex((x) => x.id === id);
+      if (i >= 0) currentRows[i] = data;
+      else currentRows.push(data);
+    }
+    renderFilteredList();
+    loadCalendar();
+    if (detailId === id) openDetail(id);
+  }
+
   async function setDetailStatus(newStatus) {
     const id = detailId;
     if (!id) return;

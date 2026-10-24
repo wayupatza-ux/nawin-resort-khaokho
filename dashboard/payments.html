@@ -55,7 +55,7 @@
     paymentsWrap.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     const { data, error } = await supabase
       .from("payments")
-      .select("id, amount, slip_url, paid_at, booking_id, bookings(booking_ref, check_in, check_out, status, guests(display_name, first_name, last_name, phone), units(name))")
+      .select("id, amount, method, note, slip_url, paid_at, booking_id, bookings(booking_ref, check_in, check_out, status, guests(display_name, first_name, last_name, phone), units(name))")
       .eq("verified", false)
       .order("paid_at", { ascending: true });
 
@@ -91,9 +91,10 @@
                 ${escapeHtml(b?.units?.name ?? "-")} · ${escapeHtml(guestDisplayName(b?.guests) ?? "-")}${b?.guests?.phone ? " · " + escapeHtml(b.guests.phone) : ""}
               </div>
               <div style="color:var(--ink-soft); font-size:0.85rem;">${b ? fmtDate(b.check_in) + " — " + fmtDate(b.check_out) : ""}</div>
-              <div style="font-weight:600; color:var(--clay-dark); margin-top:4px;">${fmtBaht(p.amount)}</div>
+              <div style="font-weight:600; color:var(--clay-dark); margin-top:4px;">${fmtBaht(p.amount)} · ${escapeHtml(METHOD_TH[p.method] ?? p.method ?? "-")}${!p.slip_url ? " (ไม่มีสลิป)" : ""}</div>
+              ${p.note ? `<div style="color:var(--ink-soft); font-size:0.85rem;">${escapeHtml(p.note)}</div>` : ""}
               <div style="margin-top:10px; display:flex; gap:8px;">
-                <button class="primary" data-confirm="${p.id}" data-booking="${p.booking_id}" style="width:auto; padding:8px 16px;">ยืนยันการชำระเงิน</button>
+                <button class="primary" data-confirm="${p.id}" data-booking="${p.booking_id}" data-status="${b?.status ?? ""}" style="width:auto; padding:8px 16px;">ยืนยันการชำระเงิน</button>
                 <button class="ghost" data-reject="${p.id}" style="width:auto; padding:8px 16px;">ปฏิเสธสลิป</button>
               </div>
             </div>
@@ -107,14 +108,16 @@
       img.addEventListener("click", () => window.open(img.dataset.zoom, "_blank"));
     });
     paymentsWrap.querySelectorAll("button[data-confirm]").forEach((btn) => {
-      btn.addEventListener("click", () => confirmPayment(btn.dataset.confirm, btn.dataset.booking, btn));
+      btn.addEventListener("click", () => confirmPayment(btn.dataset.confirm, btn.dataset.booking, btn.dataset.status, btn));
     });
     paymentsWrap.querySelectorAll("button[data-reject]").forEach((btn) => {
       btn.addEventListener("click", () => rejectSlip(btn.dataset.reject, btn));
     });
   }
 
-  async function confirmPayment(paymentId, bookingId, btn) {
+  const METHOD_TH = { transfer: "โอน", promptpay: "PromptPay", cash: "เงินสด" };
+
+  async function confirmPayment(paymentId, bookingId, bookingStatus, btn) {
     btn.disabled = true;
     const session = await requireSession();
     const { error: payErr } = await supabase
@@ -126,11 +129,15 @@
       btn.disabled = false;
       return;
     }
-    const { error: bookErr } = await supabase.from("bookings").update({ status: "confirmed" }).eq("id", bookingId);
+    // Only a waiting booking moves to confirmed — a deposit/balance verified
+    // after check-in must not push the booking back from checked_in/out.
+    const { error: bookErr } = bookingStatus === "pending"
+      ? await supabase.from("bookings").update({ status: "confirmed" }).eq("id", bookingId)
+      : { error: null };
     if (bookErr) {
       showMsg("อัปเดตสถานะการจองไม่สำเร็จ: " + bookErr.message);
     } else {
-      showMsg("ยืนยันการชำระเงินสำเร็จ — แจ้งเตือนลูกค้าผ่าน LINE แล้ว", "success");
+      showMsg(bookingStatus === "pending" ? "ยืนยันการชำระเงินสำเร็จ — แจ้งเตือนลูกค้าผ่าน LINE แล้ว" : "ยืนยันการชำระเงินสำเร็จ", "success");
     }
     await loadPending();
   }

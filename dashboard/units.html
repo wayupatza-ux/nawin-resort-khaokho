@@ -59,6 +59,7 @@
 </div>
 <script type="module">
   import { supabase, requireSession, logout, fmtBaht } from "./assets/app.js";
+  import { paymentSummary } from "./assets/payments.js";
 
   const kpiRow = document.getElementById("kpiRow");
   const commissionWrap = document.getElementById("commissionWrap");
@@ -135,8 +136,8 @@
     kpiRow.innerHTML = `<div class="empty">กำลังโหลด...</div>`;
     const { data: bookings, error } = await supabase
       .from("bookings")
-      .select("id, booking_ref, unit_id, check_in, check_out, total_amount, status, source, created_by, guests(display_name, first_name, last_name), units(name), creator:profiles!bookings_created_by_fkey(display_name, role)")
-      .in("status", ["confirmed", "checked_in", "checked_out"])
+      .select("id, booking_ref, unit_id, check_in, check_out, total_amount, status, source, created_by, guests(display_name, first_name, last_name), units(name), creator:profiles!bookings_created_by_fkey(display_name, role), payments(amount, verified)")
+      .in("status", ["pending", "confirmed", "checked_in", "checked_out"])
       .lt("check_in", end)
       .gt("check_out", start)
       .order("check_in");
@@ -157,29 +158,50 @@
       bookedNights += Math.max(0, (co - ci) / 86400000);
     }
     const inMonth = (bookings || []).filter((b) => b.check_in >= start && b.check_in < end);
-    const revenue = sum(inMonth);
-    const agodaRevenue = sum(inMonth.filter((b) => b.source === "agoda"));
-    const directRevenue = revenue - agodaRevenue;
+    for (const b of inMonth) b.pay = paymentSummary(b, b.payments);
+    // Agoda/OTA pay out themselves, so their net counts as booked. Direct
+    // bookings count only money the owner has verified; what's booked but
+    // not yet received is shown separately (migration 0022).
+    const ota = inMonth.filter((b) => b.pay.state === "ota");
+    const direct = inMonth.filter((b) => b.pay.state !== "ota");
+    const agodaRevenue = sum(ota);
+    const directRevenue = direct.reduce((s, b) => s + Math.min(b.pay.verified, b.pay.total), 0);
+    const directAwaitingVerify = direct.reduce((s, b) => s + Math.max(0, Math.min(b.pay.paid, b.pay.total) - b.pay.verified), 0);
+    const directUnpaid = direct.reduce((s, b) => s + b.pay.outstanding, 0);
+    const unpaidCount = direct.filter((b) => b.pay.outstanding > 0).length;
+    const revenue = agodaRevenue + directRevenue;
     const totalUnitNights = (units.filter((u) => u.is_active).length || units.length || 1) * daysInMonth;
     const occupancy = totalUnitNights ? Math.round((bookedNights / totalUnitNights) * 100) : 0;
     const commissionTotal = computeCommission(inMonth).total;
 
     kpiRow.innerHTML = `
-      <div class="kpi"><div class="label">รายได้ ${label}</div><div class="value">${fmtBaht(revenue)}</div></div>
-      <div class="kpi"><div class="label">ผ่าน Agoda (สุทธิ)</div><div class="value">${fmtBaht(agodaRevenue)}</div></div>
-      <div class="kpi"><div class="label">จองตรง / walk-in / เพจ</div><div class="value">${fmtBaht(directRevenue)}</div></div>
+      <div class="kpi"><div class="label">รายได้จริง ${label}</div><div class="value">${fmtBaht(revenue)}</div></div>
+      <div class="kpi"><div class="label">ผ่าน Agoda / OTA (สุทธิ)</div><div class="value">${fmtBaht(agodaRevenue)}</div></div>
+      <div class="kpi"><div class="label">จองตรง — เงินเข้าแล้ว (ตรวจแล้ว)</div><div class="value">${fmtBaht(directRevenue)}</div></div>
+      <div class="kpi"><div class="label">จองตรง — รอเจ้าของตรวจสลิป</div><div class="value">${fmtBaht(directAwaitingVerify)}</div></div>
+      <div class="kpi warn"><div class="label">ยอดจองที่ยังไม่ได้เงิน (${unpaidCount} รายการ)</div><div class="value">${fmtBaht(directUnpaid)}</div></div>
       <div class="kpi"><div class="label">Occupancy</div><div class="value">${occupancy}%</div></div>
       <div class="kpi"><div class="label">การจองที่เช็คอินเดือนนี้</div><div class="value">${inMonth.length}</div></div>
       <div class="kpi"><div class="label">ค่าคอมพนักงานรวม</div><div class="value">${fmtBaht(commissionTotal)}</div></div>
     `;
 
     document.getElementById("commissionHeading").textContent =
-      `ค่าคอมพนักงาน ${label} (${Math.round(COMMISSION_RATE * 100)}% ของยอดที่ลูกค้าจ่าย เฉพาะการจองที่พนักงานคีย์เอง)`;
+      `ค่าคอมพนักงาน ${label} (${Math.round(COMMISSION_RATE * 100)}% เฉพาะการจองที่พนักงานคีย์เอง ลูกค้าเช็คเอาท์แล้ว และเจ้าของตรวจเงินเข้าครบแล้ว)`;
     renderCommission(inMonth);
   }
 
+  // Commission is earned only when the stay happened (checked out) and the
+  // owner has verified the full amount came in.
+  function commissionBlocker(b) {
+    if (b.status !== "checked_out") return "ยังไม่เช็คเอาท์";
+    if (b.pay.paid < b.pay.total) return `ยังไม่ได้รับเงินครบ (ค้าง ${fmtBaht(b.pay.outstanding)})`;
+    if (b.pay.verified < b.pay.total) return "รอเจ้าของตรวจสลิป/เงินสด";
+    return null;
+  }
+
   function computeCommission(bookings) {
-    const earning = bookings.filter((b) => b.created_by && b.creator?.role !== "owner");
+    const staffKeyed = bookings.filter((b) => b.created_by && b.creator?.role !== "owner");
+    const earning = staffKeyed.filter((b) => !commissionBlocker(b));
     const byStaff = new Map();
     for (const b of earning) {
       const key = b.created_by;
@@ -192,7 +214,8 @@
     const rows = [...byStaff.values()]
       .map((r) => ({ ...r, commission: Math.round(r.revenue * COMMISSION_RATE * 100) / 100 }))
       .sort((a, b) => b.commission - a.commission);
-    return { earning, rows, total: rows.reduce((s, r) => s + r.commission, 0) };
+    const held = staffKeyed.filter((b) => commissionBlocker(b));
+    return { earning, held, rows, total: rows.reduce((s, r) => s + r.commission, 0) };
   }
 
   function guestName(g) {
@@ -202,14 +225,14 @@
   }
 
   function renderCommission(bookings) {
-    const { earning, rows, total } = computeCommission(bookings);
+    const { earning, held, rows, total } = computeCommission(bookings);
     const ownerKeyed = bookings.filter((b) => b.created_by && b.creator?.role === "owner");
     // Walk-in/page bookings with no recorded staff member (e.g. inserted by an
     // admin script). Agoda and LINE self-bookings are excluded by design.
     const noStaff = bookings.filter((b) => !b.created_by && b.source === "walk-in");
 
     if (!rows.length) {
-      commissionWrap.innerHTML = `<div class="empty">เดือนนี้ไม่มีการจองที่พนักงานคีย์เอง — ไม่มีค่าคอมต้องจ่าย</div>`;
+      commissionWrap.innerHTML = `<div class="empty">เดือนนี้ยังไม่มีการจองที่เข้าเงื่อนไขค่าคอม (เช็คเอาท์แล้ว + เงินเข้าครบและตรวจแล้ว)</div>`;
     } else {
       commissionWrap.innerHTML = `
         <table>
@@ -237,6 +260,23 @@
           </table>
         </details>
       `;
+    }
+
+    if (held.length) {
+      commissionWrap.insertAdjacentHTML("beforeend", `
+        <details class="commission-detail" open>
+          <summary>ยังไม่นับค่าคอม ${held.length} รายการ (${fmtBaht(sum(held))})</summary>
+          <table>
+            <thead><tr><th>เช็คอิน</th><th>เลขจอง</th><th>ห้อง</th><th>แขก</th><th>คีย์โดย</th><th>ยอด</th><th>รับเงินแล้ว</th><th>เหตุผล</th></tr></thead>
+            <tbody>
+              ${held
+                .map(
+                  (b) => `<tr><td>${b.check_in}</td><td>${escapeHtml(b.booking_ref)}</td><td>${escapeHtml(b.units?.name ?? "-")}</td><td>${escapeHtml(guestName(b.guests))}</td><td>${escapeHtml(b.creator?.display_name ?? "-")}</td><td>${fmtBaht(b.total_amount)}</td><td>${fmtBaht(b.pay.paid)}</td><td>${escapeHtml(commissionBlocker(b))}</td></tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </details>`);
     }
 
     // Surface bookings that look staff-handled but can't be attributed, so

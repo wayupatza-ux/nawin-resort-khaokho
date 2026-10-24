@@ -68,6 +68,27 @@
         <label>หมายเหตุ</label>
         <textarea id="notes" rows="2" placeholder="เช่น เหตุผลที่ปรับราคา — เช็คอินช้า, ลูกค้าประจำ ฯลฯ"></textarea>
       </div>
+      <fieldset class="pay-now">
+        <legend>รับเงินแล้วหรือยัง?</legend>
+        <div class="row">
+          <div class="field">
+            <label>ยอดที่ได้รับ (บาท)</label>
+            <input type="number" id="paidAmount" min="0" step="0.01" placeholder="ยังไม่ได้รับ = เว้นว่าง" />
+          </div>
+          <div class="field">
+            <label>ช่องทาง</label>
+            <select id="paidMethod">
+              <option value="transfer">โอน / สแกน QR</option>
+              <option value="cash">เงินสด</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="paidSlipField">
+          <label>สลิปโอนเงิน (ต้องแนบเมื่อเป็นการโอน)</label>
+          <input type="file" id="paidSlip" accept="image/*" />
+        </div>
+        <div class="pay-now-hint">ยังไม่ได้รับเงิน → เว้นว่าง การจองจะเป็น "รอยืนยัน" และระบบจะเตือนทุกคืน · ได้รับมัดจำ ≥ 50% หรือเต็มจำนวน → การจองเป็น "ยืนยันแล้ว"</div>
+      </fieldset>
       <button type="submit" class="primary" id="submitBtn">บันทึกการจอง</button>
     </form>
     <div id="paymentResultWrap"></div>
@@ -76,6 +97,7 @@
 <script type="module">
   import { supabase, requireSession, logout, gateOwnerOnlyNav } from "./assets/app.js";
   import { buildPromptPayPayload, qrImageUrl } from "./assets/promptpay.js";
+  import { recordPayment } from "./assets/payments.js";
 
   let units = [];
   let totalTouchedByUser = false;
@@ -284,6 +306,11 @@
       totalAmount = calc ? calc.total : 0;
     }
     if (Number(totalAmount) <= 0) return showMsg("กรอกยอดรวมให้ถูกต้อง");
+    const paidAmount = Number(document.getElementById("paidAmount").value) || 0;
+    const paidMethod = document.getElementById("paidMethod").value;
+    const paidSlip = document.getElementById("paidSlip").files[0] || null;
+    if (paidAmount < 0 || paidAmount > Number(totalAmount)) return showMsg("ยอดที่ได้รับต้องไม่เกินยอดรวม");
+    if (paidAmount > 0 && paidMethod === "transfer" && !paidSlip) return showMsg("แนบสลิปโอนเงินด้วย (หรือเลือก \"เงินสด\")");
 
     btn.disabled = true;
     btn.textContent = "กำลังบันทึก...";
@@ -311,7 +338,9 @@
             total_amount: totalAmount,
             source: "walk-in",
             notes: notes || null,
-            status: "confirmed",
+            // Always start unpaid; the DB forces this for staff anyway
+            // (migration 0022) and recordPayment below confirms it.
+            status: "pending",
             breakfast_included: breakfastIncluded,
             created_by: currentSession?.user?.id ?? null,
           })
@@ -323,8 +352,27 @@
       }
       if (error) throw error;
 
-      showMsg("บันทึกการจองสำเร็จ", "success");
+      let statusMsg = "สถานะ: รอยืนยัน (ยังไม่ได้รับเงิน)";
+      if (paidAmount > 0) {
+        try {
+          const confirmed = await recordPayment(supabase, booking.id, {
+            amount: paidAmount,
+            method: paidMethod,
+            file: paidSlip,
+            total: Number(totalAmount),
+            note: "บันทึกตอนคีย์การจอง",
+          });
+          statusMsg = confirmed
+            ? `สถานะ: ยืนยันแล้ว (รับเงิน ${fmtBaht(paidAmount)})`
+            : `สถานะ: รอยืนยัน — รับเงิน ${fmtBaht(paidAmount)} ยังไม่ถึงมัดจำ 50%`;
+        } catch (payErr) {
+          statusMsg = "บันทึกการจองแล้ว แต่บันทึกการชำระเงินไม่สำเร็จ: " + (payErr.message || payErr) + " — บันทึกใหม่ในหน้าการจอง";
+        }
+      }
+
+      showMsg(`บันทึกการจองสำเร็จ · ${statusMsg}`, "success");
       document.getElementById("form").reset();
+      document.getElementById("paidSlipField").hidden = false;
       totalTouchedByUser = false;
       document.getElementById("priceHint").textContent = "";
       renderPaymentQR({
@@ -346,6 +394,9 @@
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
 
+  document.getElementById("paidMethod").addEventListener("change", (e) => {
+    document.getElementById("paidSlipField").hidden = e.target.value === "cash";
+  });
   document.getElementById("unitId").addEventListener("change", recalcPrice);
   document.getElementById("checkIn").addEventListener("change", recalcPrice);
   document.getElementById("checkOut").addEventListener("change", recalcPrice);

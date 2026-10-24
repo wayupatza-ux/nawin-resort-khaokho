@@ -188,7 +188,9 @@ async function handleBook(req: Request) {
     total_amount: totalAmount,
     source: "staff-liff",
     notes: notes ?? null,
-    status: "confirmed",
+    // Unpaid until staff record the payment (with slip) on the dashboard —
+    // migration 0022 / payment control, 24 Oct 2026.
+    status: "pending",
     created_by: staff.id,
     breakfast_included: Boolean(breakfastIncluded),
   });

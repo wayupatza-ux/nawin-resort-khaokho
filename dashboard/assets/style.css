@@ -331,3 +331,24 @@ tr.total-row td { font-weight: 700; border-top: 2px solid var(--line); }
 .status-chip.confirmed.active { background: #dcefe1; color: var(--ok); }
 .status-chip.checked_in.active { background: #dce9f5; color: #2255a3; }
 .status-chip.checked_out.active { background: #e7e3db; color: var(--ink-soft); }
+
+/* Payment status (migration 0022) */
+.pay-badge { display: inline-block; margin-top: 2px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.pay-badge.unpaid { background: #fbe0dc; color: #a3321f; }
+.pay-badge.partial { background: #fdeecb; color: #8a5a00; }
+.pay-badge.paid { background: #dcefe1; color: var(--ok); }
+.pay-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line, #e2dccf); }
+.pay-section:empty { display: none; }
+.pay-head { font-weight: 600; margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pay-sub { font-weight: 400; font-size: 0.8rem; color: var(--ink-soft); }
+.pay-row { font-size: 0.85rem; line-height: 1.6; }
+.pay-row.muted { color: var(--ink-soft); }
+.pay-row .ghost { width: auto; padding: 2px 10px; font-size: 0.78rem; }
+.pay-note { font-size: 0.78rem; color: var(--ink-soft); }
+.pay-form { margin-top: 8px; }
+.pay-form summary { cursor: pointer; font-weight: 600; color: var(--clay-dark); }
+.pay-form .primary { margin-top: 6px; }
+.pay-now { border: 1px solid var(--line, #e2dccf); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; }
+.pay-now legend { font-weight: 600; padding: 0 6px; }
+.pay-now-hint { font-size: 0.78rem; color: var(--ink-soft); }
+.kpi.warn .value { color: #a3321f; }
