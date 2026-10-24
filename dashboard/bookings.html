@@ -796,15 +796,17 @@
       ["บันทึกเมื่อ", created],
       b.notes ? ["หมายเหตุ", `<span>${escapeHtml(b.notes)}</span>`] : null,
     ].filter(Boolean);
-    const history = await loadStatusHistory(b.id);
-    if (history) rows.push(["ประวัติสถานะ", history]);
     document.getElementById("detailSub").textContent = `เลขที่จอง ${b.booking_ref}`;
-    document.getElementById("detailBody").innerHTML = rows
+    const body = document.getElementById("detailBody");
+    body.innerHTML = rows
       .map(([k, v]) => `<dt>${k}</dt><dd${k === "หมายเหตุ" ? ' class="notes"' : ""}>${v}</dd>`)
       .join("");
     detailResched.hidden = !RESCHEDULABLE.includes(b.status);
     renderStatusQuick(b.status);
     detailBd.hidden = false;
+    // History loads after the popup is already on screen.
+    const history = await loadStatusHistory(b.id);
+    if (history && detailId === b.id) body.insertAdjacentHTML("beforeend", `<dt>ประวัติสถานะ</dt><dd>${history}</dd>`);
   }
 
   // One-tap status buttons at the top of the detail popup (opened by clicking
