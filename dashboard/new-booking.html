@@ -111,21 +111,32 @@
     return Number(n).toLocaleString("th-TH", { maximumFractionDigits: 0 }) + " บาท";
   }
 
-  function computeStandardPrice() {
+  // Nightly rate varies by day of week, holidays and per-night specials
+  // (migration 0020), so the standard price always comes from the
+  // calc_stay_total DB function — same as the staff app and guest-api —
+  // instead of a flat base_price x nights guess.
+  let priceCalcToken = 0;
+  async function computeStandardPrice() {
     const unitId = document.getElementById("unitId").value;
     const checkIn = document.getElementById("checkIn").value;
     const checkOut = document.getElementById("checkOut").value;
-    const opt = document.querySelector(`#unitId option[value="${unitId}"]`);
-    const price = Number(opt?.dataset.price || 0);
     if (!unitId || !checkIn || !checkOut || checkOut <= checkIn) return null;
     const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
-    return { price, nights, total: price * nights };
+    const { data, error } = await supabase.rpc("calc_stay_total", {
+      p_unit_id: unitId,
+      p_check_in: checkIn,
+      p_check_out: checkOut,
+    });
+    if (error) return null;
+    return { nights, total: Number(data) };
   }
 
-  function recalcPrice() {
-    const calc = computeStandardPrice();
+  async function recalcPrice() {
     const hint = document.getElementById("priceHint");
     const totalInput = document.getElementById("totalAmount");
+    const myToken = ++priceCalcToken;
+    const calc = await computeStandardPrice();
+    if (myToken !== priceCalcToken) return; // a newer recalc superseded this one
 
     if (!calc) {
       hint.textContent = "";
@@ -135,7 +146,8 @@
     const resetLink = totalTouchedByUser
       ? ` · <a href="#" id="resetPriceLink" style="color:var(--clay-dark);">ใช้ราคาปกติ</a>`
       : "";
-    hint.innerHTML = `ราคาปกติ ${fmtBaht(calc.price)} x ${calc.nights} คืน = <strong>${fmtBaht(calc.total)}</strong>${resetLink}`;
+    const perNight = calc.nights > 1 ? ` (เฉลี่ย ${fmtBaht(Math.round(calc.total / calc.nights))}/คืน)` : "";
+    hint.innerHTML = `ราคาปกติ ${calc.nights} คืน = <strong>${fmtBaht(calc.total)}</strong>${perNight}${resetLink}`;
 
     const resetEl = document.getElementById("resetPriceLink");
     if (resetEl) {
@@ -168,13 +180,17 @@
   async function loadUnits() {
     const { data, error } = await supabase
       .from("units")
-      .select("id, name, base_price")
+      .select("id, name, base_price, weekday_price, weekend_price")
       .eq("is_active", true)
       .order("name");
     if (error) return showMsg("โหลดห้องไม่สำเร็จ: " + error.message);
     units = data || [];
     const sel = document.getElementById("unitId");
-    sel.innerHTML = units.map((u) => `<option value="${u.id}" data-price="${u.base_price}">${u.name} (${u.base_price} บาท/คืน)</option>`).join("");
+    const priceLabel = (u) =>
+      u.weekday_price != null && u.weekend_price != null
+        ? `${u.weekday_price}–${u.weekend_price} บาท/คืน`
+        : `${u.base_price} บาท/คืน`;
+    sel.innerHTML = units.map((u) => `<option value="${u.id}">${u.name} (${priceLabel(u)})</option>`).join("");
   }
 
   async function loadResortSettings() {
@@ -295,7 +311,7 @@
     if (checkOut <= checkIn) return showMsg("วันเช็คเอาท์ต้องอยู่หลังวันเช็คอิน");
 
     if (!totalAmount) {
-      const calc = computeStandardPrice();
+      const calc = await computeStandardPrice();
       totalAmount = calc ? calc.total : 0;
     }
     if (Number(totalAmount) <= 0) return showMsg("กรอกยอดรวมให้ถูกต้อง");
