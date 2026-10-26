@@ -112,6 +112,19 @@ Deno.serve(async (req: Request) => {
     `ผู้เข้าพัก: ${booking.num_guests} คน\n` +
     `อาหารเช้า: ${breakfastLabel}\n` +
     `ยอด: ${Number(booking.total_amount).toLocaleString("th-TH")} บาท`;
+  // Until Beds24 pushes PMS availability to Agoda, a direct booking has to
+  // be closed on Agoda by hand (N4 12 Dec 2026 stayed open and could have
+  // been double-sold). Switch off via resort_settings once sync is live.
+  if (kind === "confirmed" && !["agoda", "booking.com", "beds24"].includes(booking.source)) {
+    const { data: remind } = await supabase
+      .from("resort_settings")
+      .select("value")
+      .eq("key", "agoda_manual_close_reminder")
+      .maybeSingle();
+    if ((remind?.value ?? "on") !== "off") {
+      text += `\n\n⚠️ อย่าลืมปิดห้องนี้บน Agoda ตามวันที่เข้าพัก (ระบบยังไม่ sync อัตโนมัติ)`;
+    }
+  }
   if (kind === "liff_pending") {
     const deadline = new Date(new Date(booking.created_at).getTime() + 24 * 3600_000)
       .toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
