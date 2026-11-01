@@ -3,7 +3,7 @@
 // it on payments.html. A booking only becomes "confirmed" once recorded
 // payments cover a 50% deposit; the DB enforces the same rule for staff.
 
-export const METHOD_TH = { transfer: "โอน", promptpay: "PromptPay", cash: "เงินสด" };
+export const METHOD_TH = { transfer: "โอน", promptpay: "PromptPay", cash: "เงินสด", salary_deduction: "หักเงินเดือนพนักงาน" };
 export const DEPOSIT_SHARE = 0.5;
 
 export async function uploadSlip(supabase, bookingId, file) {
