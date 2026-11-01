@@ -159,13 +159,17 @@
     }
     const inMonth = (bookings || []).filter((b) => b.check_in >= start && b.check_in < end);
     for (const b of inMonth) b.pay = paymentSummary(b, b.payments);
-    // Agoda/OTA pay out themselves, so their net counts as booked. Direct
-    // bookings count only money the owner has verified; what's booked but
-    // not yet received is shown separately (migration 0022).
+    // Revenue is recognised only once the guest has stayed and checked out
+    // (บอสตอง, 1 Nov 2026). Before that, direct-booking money is a deposit
+    // held for a future stay and OTA bookings are just on the books.
+    // Direct bookings count only money the owner has verified (migration 0022).
+    const stayed = (b) => b.status === "checked_out";
     const ota = inMonth.filter((b) => b.pay.state === "ota");
     const direct = inMonth.filter((b) => b.pay.state !== "ota");
-    const agodaRevenue = sum(ota);
-    const directRevenue = direct.reduce((s, b) => s + Math.min(b.pay.verified, b.pay.total), 0);
+    const agodaRevenue = sum(ota.filter(stayed));
+    const agodaOnBooks = sum(ota.filter((b) => !stayed(b)));
+    const directRevenue = direct.filter(stayed).reduce((s, b) => s + Math.min(b.pay.verified, b.pay.total), 0);
+    const directDeposits = direct.filter((b) => !stayed(b)).reduce((s, b) => s + Math.min(b.pay.paid, b.pay.total), 0);
     const directAwaitingVerify = direct.reduce((s, b) => s + Math.max(0, Math.min(b.pay.paid, b.pay.total) - b.pay.verified), 0);
     const directUnpaid = direct.reduce((s, b) => s + b.pay.outstanding, 0);
     const unpaidCount = direct.filter((b) => b.pay.outstanding > 0).length;
@@ -175,9 +179,11 @@
     const commissionTotal = computeCommission(inMonth).total;
 
     kpiRow.innerHTML = `
-      <div class="kpi"><div class="label">รายได้จริง ${label}</div><div class="value">${fmtBaht(revenue)}</div></div>
-      <div class="kpi"><div class="label">ผ่าน Agoda / OTA (สุทธิ)</div><div class="value">${fmtBaht(agodaRevenue)}</div></div>
-      <div class="kpi"><div class="label">จองตรง — เงินเข้าแล้ว (ตรวจแล้ว)</div><div class="value">${fmtBaht(directRevenue)}</div></div>
+      <div class="kpi"><div class="label">รายได้จริง ${label} (เข้าพัก + เช็คเอาท์แล้ว)</div><div class="value">${fmtBaht(revenue)}</div></div>
+      <div class="kpi"><div class="label">ผ่าน Agoda / OTA (สุทธิ, เช็คเอาท์แล้ว)</div><div class="value">${fmtBaht(agodaRevenue)}</div></div>
+      <div class="kpi"><div class="label">จองตรง — เช็คเอาท์แล้ว เงินเข้า (ตรวจแล้ว)</div><div class="value">${fmtBaht(directRevenue)}</div></div>
+      <div class="kpi"><div class="label">มัดจำ/จ่ายล่วงหน้า — ยังไม่เข้าพัก (ยังไม่นับรายได้)</div><div class="value">${fmtBaht(directDeposits)}</div></div>
+      <div class="kpi"><div class="label">Agoda/OTA ที่ยังไม่เข้าพัก (ยังไม่นับรายได้)</div><div class="value">${fmtBaht(agodaOnBooks)}</div></div>
       <div class="kpi"><div class="label">จองตรง — รอเจ้าของตรวจสลิป</div><div class="value">${fmtBaht(directAwaitingVerify)}</div></div>
       <div class="kpi warn"><div class="label">ยอดจองที่ยังไม่ได้เงิน (${unpaidCount} รายการ)</div><div class="value">${fmtBaht(directUnpaid)}</div></div>
       <div class="kpi"><div class="label">Occupancy</div><div class="value">${occupancy}%</div></div>
